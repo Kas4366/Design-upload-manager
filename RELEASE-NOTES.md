@@ -1,3 +1,18 @@
+# Release Notes
+
+## Version 1.0.2 - 2026-01-29
+
+### Improvements
+- **Redesigned Correction Check Modal**: New 3-column layout for better design review
+  - Left sidebar: Order details (order number, Veeqo ID, product, SKU, tab info, folder destination)
+  - Center: Larger PDF viewer for better design inspection
+  - Right sidebar: Customization details (customer notes, additional options, customer images)
+  - Navigation arrows moved to bottom of PDF for easier access
+  - Customer images now clickable to view full size in new window
+  - Improved review notes section with larger textarea
+
+---
+
 # Release Process Guide
 
 This document explains how to create and release updates for the Design Upload Manager desktop application.
