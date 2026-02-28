@@ -1,0 +1,312 @@
+import { supabase } from './supabase';
+import { CSVRow } from './types';
+
+export interface SessionInfo {
+  id: string;
+  csvFilename: string;
+  uploadedAt: string;
+  lastAccessedAt: string;
+  autoCleanupDays: number;
+  isArchived: boolean;
+  totalOrders: number;
+  completedOrders: number;
+}
+
+export interface SessionPosition {
+  id: string;
+  sessionId: string;
+  orderItemId: string;
+  tabId: string;
+  xPosition: number;
+  yPosition: number;
+  fontSize: number;
+  rotation: number;
+  savedAt: string;
+}
+
+export async function findSessionByCSVFilename(csvFilename: string): Promise<SessionInfo | null> {
+  const { data, error } = await supabase
+    .from('processing_sessions')
+    .select(`
+      *,
+      order_items(count)
+    `)
+    .eq('csv_filename', csvFilename)
+    .eq('is_archived', false)
+    .maybeSingle();
+
+  if (error) {
+    console.error('Error finding session:', error);
+    return null;
+  }
+
+  if (!data) {
+    return null;
+  }
+
+  const { data: completedCount } = await supabase
+    .from('order_items')
+    .select('id', { count: 'exact' })
+    .eq('session_id', data.id)
+    .eq('is_saved', true);
+
+  return {
+    id: data.id,
+    csvFilename: data.csv_filename,
+    uploadedAt: data.uploaded_at,
+    lastAccessedAt: data.last_accessed_at || data.uploaded_at,
+    autoCleanupDays: data.auto_cleanup_days || 30,
+    isArchived: data.is_archived,
+    totalOrders: Array.isArray(data.order_items) ? data.order_items.length : 0,
+    completedOrders: completedCount?.length || 0
+  };
+}
+
+export async function createSession(
+  csvFilename: string,
+  csvRows: CSVRow[]
+): Promise<string | null> {
+  const { data: sessionData, error: sessionError } = await supabase
+    .from('processing_sessions')
+    .insert({
+      csv_filename: csvFilename,
+      uploaded_at: new Date().toISOString(),
+      last_accessed_at: new Date().toISOString(),
+      auto_cleanup_days: 30,
+      is_archived: false
+    })
+    .select()
+    .single();
+
+  if (sessionError) {
+    console.error('Error creating session:', sessionError);
+    return null;
+  }
+
+  const orderItems = csvRows.map(row => ({
+    session_id: sessionData.id,
+    order_id: row.id,
+    order_number: row.order_number,
+    sku: row.sku,
+    title: row.title,
+    quantity: row.quantity,
+    number_of_lines: row.number_of_lines,
+    line1: row.line1 || '',
+    line2: row.line2 || '',
+    line3: row.line3 || '',
+    line4: row.line4 || '',
+    line5: row.line5 || '',
+    line6: row.line6 || '',
+    line7: row.line7 || '',
+    line8: row.line8 || '',
+    line9: row.line9 || '',
+    line10: row.line10 || '',
+    is_saved: false
+  }));
+
+  const { error: itemsError } = await supabase
+    .from('order_items')
+    .insert(orderItems);
+
+  if (itemsError) {
+    console.error('Error creating order items:', itemsError);
+    await supabase.from('processing_sessions').delete().eq('id', sessionData.id);
+    return null;
+  }
+
+  return sessionData.id;
+}
+
+export async function updateSessionAccess(sessionId: string): Promise<void> {
+  await supabase
+    .from('processing_sessions')
+    .update({ last_accessed_at: new Date().toISOString() })
+    .eq('id', sessionId);
+}
+
+export async function getAllActiveSessions(): Promise<SessionInfo[]> {
+  const { data, error } = await supabase
+    .from('processing_sessions')
+    .select('*')
+    .eq('is_archived', false)
+    .order('last_accessed_at', { ascending: false });
+
+  if (error) {
+    console.error('Error fetching sessions:', error);
+    return [];
+  }
+
+  const sessionsWithCounts = await Promise.all(
+    data.map(async session => {
+      const { count: totalCount } = await supabase
+        .from('order_items')
+        .select('*', { count: 'exact', head: true })
+        .eq('session_id', session.id);
+
+      const { count: completedCount } = await supabase
+        .from('order_items')
+        .select('*', { count: 'exact', head: true })
+        .eq('session_id', session.id)
+        .eq('is_saved', true);
+
+      return {
+        id: session.id,
+        csvFilename: session.csv_filename,
+        uploadedAt: session.uploaded_at,
+        lastAccessedAt: session.last_accessed_at || session.uploaded_at,
+        autoCleanupDays: session.auto_cleanup_days || 30,
+        isArchived: session.is_archived,
+        totalOrders: totalCount || 0,
+        completedOrders: completedCount || 0
+      };
+    })
+  );
+
+  return sessionsWithCounts;
+}
+
+export async function saveOrderNumberPosition(
+  sessionId: string,
+  orderItemId: string,
+  tabId: string,
+  xPosition: number,
+  yPosition: number,
+  fontSize: number,
+  rotation: number
+): Promise<boolean> {
+  const { error } = await supabase
+    .from('session_positions')
+    .upsert({
+      session_id: sessionId,
+      order_item_id: orderItemId,
+      tab_id: tabId,
+      x_position: xPosition,
+      y_position: yPosition,
+      font_size: fontSize,
+      rotation: rotation,
+      saved_at: new Date().toISOString()
+    }, {
+      onConflict: 'session_id,order_item_id,tab_id'
+    });
+
+  if (error) {
+    console.error('Error saving position:', error);
+    return false;
+  }
+
+  return true;
+}
+
+export async function getOrderNumberPosition(
+  sessionId: string,
+  orderItemId: string,
+  tabId: string
+): Promise<SessionPosition | null> {
+  const { data, error } = await supabase
+    .from('session_positions')
+    .select('*')
+    .eq('session_id', sessionId)
+    .eq('order_item_id', orderItemId)
+    .eq('tab_id', tabId)
+    .maybeSingle();
+
+  if (error) {
+    console.error('Error fetching position:', error);
+    return null;
+  }
+
+  if (!data) {
+    return null;
+  }
+
+  return {
+    id: data.id,
+    sessionId: data.session_id,
+    orderItemId: data.order_item_id,
+    tabId: data.tab_id,
+    xPosition: data.x_position,
+    yPosition: data.y_position,
+    fontSize: data.font_size,
+    rotation: data.rotation,
+    savedAt: data.saved_at
+  };
+}
+
+export async function getSessionPositions(sessionId: string): Promise<SessionPosition[]> {
+  const { data, error } = await supabase
+    .from('session_positions')
+    .select('*')
+    .eq('session_id', sessionId);
+
+  if (error) {
+    console.error('Error fetching positions:', error);
+    return [];
+  }
+
+  return data.map(pos => ({
+    id: pos.id,
+    sessionId: pos.session_id,
+    orderItemId: pos.order_item_id,
+    tabId: pos.tab_id,
+    xPosition: pos.x_position,
+    yPosition: pos.y_position,
+    fontSize: pos.font_size,
+    rotation: pos.rotation,
+    savedAt: pos.saved_at
+  }));
+}
+
+export async function archiveSession(sessionId: string): Promise<boolean> {
+  const { error } = await supabase
+    .from('processing_sessions')
+    .update({ is_archived: true })
+    .eq('id', sessionId);
+
+  if (error) {
+    console.error('Error archiving session:', error);
+    return false;
+  }
+
+  return true;
+}
+
+export async function deleteSession(sessionId: string): Promise<boolean> {
+  const { error } = await supabase
+    .from('processing_sessions')
+    .delete()
+    .eq('id', sessionId);
+
+  if (error) {
+    console.error('Error deleting session:', error);
+    return false;
+  }
+
+  return true;
+}
+
+export async function getOldSessions(days: number = 30): Promise<SessionInfo[]> {
+  const cutoffDate = new Date();
+  cutoffDate.setDate(cutoffDate.getDate() - days);
+
+  const { data, error } = await supabase
+    .from('processing_sessions')
+    .select('*')
+    .eq('is_archived', false)
+    .lt('last_accessed_at', cutoffDate.toISOString());
+
+  if (error) {
+    console.error('Error fetching old sessions:', error);
+    return [];
+  }
+
+  return data.map(session => ({
+    id: session.id,
+    csvFilename: session.csv_filename,
+    uploadedAt: session.uploaded_at,
+    lastAccessedAt: session.last_accessed_at || session.uploaded_at,
+    autoCleanupDays: session.auto_cleanup_days || 30,
+    isArchived: session.is_archived,
+    totalOrders: 0,
+    completedOrders: 0
+  }));
+}

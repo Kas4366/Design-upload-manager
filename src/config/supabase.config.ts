@@ -1,0 +1,4 @@
+export const SUPABASE_CONFIG = {
+  url: 'https://dsjyogmvplpllzduuscq.supabase.co',
+  anonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRzanlvZ212cGxwbGx6ZHV1c2NxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjkwODQ3NzEsImV4cCI6MjA4NDY2MDc3MX0.uOZnMPj9jCQQRKC6Veb6R3QysoFQz7Sk75AN1zlj5fM'
+} as const;

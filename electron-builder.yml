@@ -1,0 +1,35 @@
+appId: com.designupload.manager
+productName: Design Upload Manager
+
+publish:
+  provider: github
+  owner: Kas4366
+  repo: Design-upload-manager
+  releaseType: release
+
+directories:
+  output: release
+  buildResources: electron
+
+files:
+  - dist/**/*
+  - electron/**/*
+  - package.json
+  - "!src"
+
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+  artifactName: ${productName}-Setup-${version}.${ext}
+  publisherName: Design Upload Manager
+  verifyUpdateCodeSignature: false
+
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  allowElevation: true
+  perMachine: false
