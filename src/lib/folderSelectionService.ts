@@ -41,6 +41,7 @@ export class FolderSelectionService {
     sku: string;
     line_index: number;
     is_card: boolean;
+    label: string;
     auto_selected_folder: string | null;
     selected_folder: string | null;
   }): Promise<{ success: boolean; error?: string }> {

@@ -17,6 +17,7 @@ import { skuPositionService } from './lib/db';
 import { premadeDesignService } from './lib/premadeDesignService';
 import { getFileDimensions } from './lib/pdfProcessor';
 import { loadSessionData, updateSessionAccess, findSessionByCSVFilename, archiveSession } from './lib/sessionService';
+import { productTypePositionService } from './lib/productTypePositionService';
 import type { CSVRow, OrderWithTabs, ProcessingSession, UploadTab, FolderType, SKURoutingRule } from './lib/types';
 
 type AppView = 'upload' | 'orders';
@@ -31,6 +32,8 @@ function App() {
   const [placementTab, setPlacementTab] = useState<{ order: OrderWithTabs; tabId: string } | null>(null);
   const [availableFolders, setAvailableFolders] = useState<FolderType[]>([]);
   const [routingRules, setRoutingRules] = useState<SKURoutingRule[]>([]);
+  const [isUploadingCSV, setIsUploadingCSV] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState('');
 
   useEffect(() => {
     loadFoldersAndRules();
@@ -103,24 +106,32 @@ function App() {
   };
 
   const handleCSVParsed = async (rows: CSVRow[], filename: string) => {
-    const existingSession = await findSessionByCSVFilename(filename);
+    setIsUploadingCSV(true);
+    setUploadProgress('Checking for existing session...');
 
-    if (existingSession) {
-      const confirmed = window.confirm(
-        `A session for "${filename}" already exists.\n\n` +
-        `Started: ${new Date(existingSession.uploadedAt).toLocaleString()}\n` +
-        `Last accessed: ${new Date(existingSession.lastAccessedAt).toLocaleString()}\n` +
-        `Progress: ${existingSession.completedOrders}/${existingSession.totalOrders} orders\n\n` +
-        `Click OK to resume the existing session, or Cancel to start fresh.`
-      );
+    try {
+      const existingSession = await findSessionByCSVFilename(filename);
 
-      if (confirmed) {
-        await handleLoadSession(existingSession.id);
-        return;
-      } else {
-        await archiveSession(existingSession.id);
+      if (existingSession) {
+        const confirmed = window.confirm(
+          `A session for "${filename}" already exists.\n\n` +
+          `Started: ${new Date(existingSession.uploadedAt).toLocaleString()}\n` +
+          `Last accessed: ${new Date(existingSession.lastAccessedAt).toLocaleString()}\n` +
+          `Progress: ${existingSession.completedOrders}/${existingSession.totalOrders} orders\n\n` +
+          `Click OK to resume the existing session, or Cancel to start fresh.`
+        );
+
+        if (confirmed) {
+          setUploadProgress('Loading existing session...');
+          await handleLoadSession(existingSession.id);
+          setIsUploadingCSV(false);
+          return;
+        } else {
+          await archiveSession(existingSession.id);
+        }
       }
-    }
+
+      setUploadProgress('Creating new session...');
 
     // Group CSV rows by order_number to get unique order count
     const groupedByOrderNumber = new Map<string, CSVRow[]>();
@@ -221,11 +232,45 @@ function App() {
         globalTabNumber += tabsForLine;
       });
 
+      // Save tab metadata to database
+      setUploadProgress(`Saving order metadata (${ordersWithTabs.length + 1}/${insertedOrders.length})...`);
+      for (const tab of allTabs) {
+        await folderSelectionService.saveTabMetadata({
+          order_item_id: order.id,
+          tab_id: tab.id,
+          tab_number: tab.tabNumber,
+          sku: tab.sku,
+          line_index: tab.lineIndex,
+          is_card: tab.isCard,
+          label: tab.label,
+          auto_selected_folder: tab.autoSelectedFolder,
+          selected_folder: tab.selectedFolder
+        });
+      }
+
+      // Check for wrapper type and apply saved position if exists
+      for (const tab of allTabs) {
+        const productType = productTypePositionService.getProductType(tab.sku, order.product_title);
+        if (productType) {
+          const typePosition = await productTypePositionService.getPositionByType(productType);
+          if (typePosition && !tab.position) {
+            tab.orderNumberPlaced = true;
+            tab.position = {
+              x: typePosition.x_position,
+              y: typePosition.y_position,
+              fontSize: typePosition.font_size,
+              rotation: typePosition.rotation
+            };
+          }
+        }
+      }
+
       const imageUrls = extractImageUrls(`${order.customer_note} ${order.additional_options}`);
 
       const isReadyMade = premadeDesignService.isReadyMadeOrder(order.product_title, order.customer_note);
 
       if (isReadyMade) {
+        setUploadProgress(`Loading ready-made designs (${ordersWithTabs.length + 1}/${insertedOrders.length})...`);
         for (const tab of allTabs) {
           const isInsideCard = tab.isCard && tab.label === 'Inside';
           if (isInsideCard) continue;
@@ -265,8 +310,15 @@ function App() {
       });
     }
 
-    setOrders(ordersWithTabs);
-    setView('orders');
+      setOrders(ordersWithTabs);
+      setView('orders');
+    } catch (error) {
+      console.error('Error during CSV upload:', error);
+      alert('An error occurred while processing the CSV file. Please try again.');
+    } finally {
+      setIsUploadingCSV(false);
+      setUploadProgress('');
+    }
   };
 
   const handleSelectOrder = (order: OrderWithTabs) => {
@@ -283,6 +335,17 @@ function App() {
 
     const dimensions = await getFileDimensions(file, fileType);
 
+    // Check for product type position (e.g., wrapper)
+    let typePosition = null;
+    if (currentTab && !savedPosition) {
+      const productType = productTypePositionService.getProductType(currentTab.sku, selectedOrder.product_title);
+      if (productType) {
+        typePosition = await productTypePositionService.getPositionByType(productType);
+      }
+    }
+
+    const positionToUse = savedPosition || typePosition;
+
     const updatedTabs = selectedOrder.tabs.map(tab =>
       tab.id === tabId
         ? {
@@ -293,13 +356,13 @@ function App() {
             fileWidth: dimensions.width,
             fileHeight: dimensions.height,
             isAutoLoaded: false,
-            orderNumberPlaced: savedPosition ? true : false,
-            position: savedPosition
+            orderNumberPlaced: positionToUse ? true : false,
+            position: positionToUse
               ? {
-                  x: savedPosition.x_position,
-                  y: savedPosition.y_position,
-                  fontSize: savedPosition.font_size,
-                  rotation: savedPosition.rotation
+                  x: positionToUse.x_position,
+                  y: positionToUse.y_position,
+                  fontSize: positionToUse.font_size,
+                  rotation: positionToUse.rotation
                 }
               : null
           }
@@ -828,7 +891,7 @@ function App() {
           order={{
             id: placementTab.tabId,
             orderNumber: placementTab.order.order_number,
-            sku: placementTab.order.sku,
+            sku: placementTab.order.tabs.find(t => t.id === placementTab.tabId)?.sku || placementTab.order.sku,
             pdfFile: placementTab.order.tabs.find(t => t.id === placementTab.tabId)?.pdfFile || null,
             pdfDataUrl: placementTab.order.tabs.find(t => t.id === placementTab.tabId)?.pdfDataUrl || null,
             fileType: placementTab.order.tabs.find(t => t.id === placementTab.tabId)?.fileType || null,
@@ -837,10 +900,23 @@ function App() {
             position: null,
             hasPosition: false
           }}
+          productTitle={placementTab.order.product_title}
           initialPosition={placementTab.order.tabs.find(t => t.id === placementTab.tabId)?.position || null}
           onClose={() => setPlacementTab(null)}
           onSavePosition={(_, x, y, fontSize, rotation) => handleSavePosition(x, y, fontSize, rotation)}
         />
+      )}
+
+      {isUploadingCSV && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-8 max-w-md w-full mx-4 shadow-2xl">
+            <div className="flex flex-col items-center">
+              <div className="animate-spin rounded-full h-16 w-16 border-b-4 border-blue-600 mb-4"></div>
+              <h3 className="text-xl font-semibold text-gray-800 mb-2">Processing CSV</h3>
+              <p className="text-gray-600 text-center">{uploadProgress}</p>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

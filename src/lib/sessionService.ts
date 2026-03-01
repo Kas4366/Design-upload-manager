@@ -395,7 +395,7 @@ export async function loadSessionData(sessionId: string): Promise<OrderWithTabs[
 
         tabs.push({
           id: tabMeta.tab_id,
-          label: `Tab ${tabMeta.tab_number || 0}`,
+          label: tabMeta.label || `Tab ${tabMeta.tab_number || 0}`,
           tabNumber: tabMeta.tab_number || 0,
           sku: tabMeta.sku || '',
           lineIndex: tabMeta.line_index || 0,

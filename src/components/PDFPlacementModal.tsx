@@ -3,15 +3,17 @@ import { X, Save, Check, AlertCircle, RotateCw } from 'lucide-react';
 import type { Order } from '../lib/types';
 import { skuPositionService } from '../lib/db';
 import { convertPDFToImageDataURL } from '../lib/pdfProcessor';
+import { productTypePositionService } from '../lib/productTypePositionService';
 
 interface PDFPlacementModalProps {
   order: Order;
   onClose: () => void;
   onSavePosition: (orderId: string, x: number, y: number, fontSize: number, rotation: number) => void;
   initialPosition?: { x: number; y: number; fontSize: number; rotation: number } | null;
+  productTitle?: string;
 }
 
-export function PDFPlacementModal({ order, onClose, onSavePosition, initialPosition }: PDFPlacementModalProps) {
+export function PDFPlacementModal({ order, onClose, onSavePosition, initialPosition, productTitle }: PDFPlacementModalProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const imageRef = useRef<HTMLImageElement>(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -26,9 +28,13 @@ export function PDFPlacementModal({ order, onClose, onSavePosition, initialPosit
   const [displayDimensions, setDisplayDimensions] = useState({ width: 900, height: 1100 });
   const [renderError, setRenderError] = useState<string | null>(null);
   const [displayImageUrl, setDisplayImageUrl] = useState<string>('');
+  const [saveForAllWrappers, setSaveForAllWrappers] = useState(false);
+  const [isWrapper, setIsWrapper] = useState(false);
 
   useEffect(() => {
     checkSavedPosition();
+    const isWrapperProduct = productTypePositionService.isChocolateWrapper(order.sku, productTitle || '');
+    setIsWrapper(isWrapperProduct);
   }, []);
 
   useEffect(() => {
@@ -149,6 +155,15 @@ export function PDFPlacementModal({ order, onClose, onSavePosition, initialPosit
       setSavedPositionAvailable(true);
       setTimeout(() => setShowSaveSuccess(false), 3000);
     }
+
+    if (saveForAllWrappers && isWrapper) {
+      await productTypePositionService.savePosition('wrapper', {
+        x: position.x,
+        y: position.y,
+        fontSize: fontSize,
+        rotation: rotation
+      });
+    }
   };
 
   return (
@@ -242,13 +257,27 @@ export function PDFPlacementModal({ order, onClose, onSavePosition, initialPosit
                 </button>
               )}
 
-              <button
-                onClick={handleSaveToDatabase}
-                className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-1 rounded text-sm transition-colors flex items-center gap-2"
-              >
-                <Save size={16} />
-                Save Position for SKU
-              </button>
+              <div className="flex flex-col gap-2">
+                <button
+                  onClick={handleSaveToDatabase}
+                  className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-1 rounded text-sm transition-colors flex items-center gap-2"
+                >
+                  <Save size={16} />
+                  Save Position for SKU
+                </button>
+
+                {isWrapper && (
+                  <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={saveForAllWrappers}
+                      onChange={(e) => setSaveForAllWrappers(e.target.checked)}
+                      className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                    />
+                    <span>Save for all chocolate wrappers</span>
+                  </label>
+                )}
+              </div>
             </div>
 
             {showSaveSuccess && (
