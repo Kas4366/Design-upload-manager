@@ -28,12 +28,11 @@ export interface SessionPosition {
 export async function findSessionByCSVFilename(csvFilename: string): Promise<SessionInfo | null> {
   const { data, error } = await supabase
     .from('processing_sessions')
-    .select(`
-      *,
-      order_items(count)
-    `)
+    .select('*')
     .eq('csv_filename', csvFilename)
     .eq('is_archived', false)
+    .order('last_accessed_at', { ascending: false })
+    .limit(1)
     .maybeSingle();
 
   if (error) {
@@ -45,21 +44,26 @@ export async function findSessionByCSVFilename(csvFilename: string): Promise<Ses
     return null;
   }
 
-  const { data: completedCount } = await supabase
+  const { count: totalCount } = await supabase
     .from('order_items')
-    .select('id', { count: 'exact' })
+    .select('*', { count: 'exact', head: true })
+    .eq('session_id', data.id);
+
+  const { count: completedCount } = await supabase
+    .from('order_items')
+    .select('*', { count: 'exact', head: true })
     .eq('session_id', data.id)
     .eq('is_saved', true);
 
   return {
     id: data.id,
     csvFilename: data.csv_filename,
-    uploadedAt: data.uploaded_at,
-    lastAccessedAt: data.last_accessed_at || data.uploaded_at,
+    uploadedAt: data.uploaded_at || data.started_at,
+    lastAccessedAt: data.last_accessed_at || data.uploaded_at || data.started_at,
     autoCleanupDays: data.auto_cleanup_days || 30,
-    isArchived: data.is_archived,
-    totalOrders: Array.isArray(data.order_items) ? data.order_items.length : 0,
-    completedOrders: completedCount?.length || 0
+    isArchived: data.is_archived || false,
+    totalOrders: totalCount || 0,
+    completedOrders: completedCount || 0
   };
 }
 
@@ -137,6 +141,10 @@ export async function getAllActiveSessions(): Promise<SessionInfo[]> {
     return [];
   }
 
+  if (!data || data.length === 0) {
+    return [];
+  }
+
   const sessionsWithCounts = await Promise.all(
     data.map(async session => {
       const { count: totalCount } = await supabase
@@ -153,10 +161,10 @@ export async function getAllActiveSessions(): Promise<SessionInfo[]> {
       return {
         id: session.id,
         csvFilename: session.csv_filename,
-        uploadedAt: session.uploaded_at,
-        lastAccessedAt: session.last_accessed_at || session.uploaded_at,
+        uploadedAt: session.uploaded_at || session.started_at,
+        lastAccessedAt: session.last_accessed_at || session.uploaded_at || session.started_at,
         autoCleanupDays: session.auto_cleanup_days || 30,
-        isArchived: session.is_archived,
+        isArchived: session.is_archived || false,
         totalOrders: totalCount || 0,
         completedOrders: completedCount || 0
       };
@@ -359,6 +367,11 @@ export async function loadSessionData(sessionId: string): Promise<OrderWithTabs[
       const tabs: UploadTab[] = [];
 
       for (const tabMeta of tabMetadata) {
+        if (!tabMeta || !tabMeta.tab_id) {
+          console.warn('Invalid tab metadata found, skipping:', tabMeta);
+          continue;
+        }
+
         const uploadedFile = uploadedFiles.find(
           f => f.orderItemId === order.id && f.tabId === tabMeta.tab_id
         );
@@ -382,14 +395,14 @@ export async function loadSessionData(sessionId: string): Promise<OrderWithTabs[
 
         tabs.push({
           id: tabMeta.tab_id,
-          label: `Tab ${tabMeta.tab_number}`,
-          tabNumber: tabMeta.tab_number,
-          sku: tabMeta.sku,
-          lineIndex: tabMeta.line_index,
-          lineItemId: tabMeta.line_item_id,
-          isCard: tabMeta.is_card,
-          autoSelectedFolder: tabMeta.auto_selected_folder,
-          selectedFolder: tabMeta.selected_folder,
+          label: `Tab ${tabMeta.tab_number || 0}`,
+          tabNumber: tabMeta.tab_number || 0,
+          sku: tabMeta.sku || '',
+          lineIndex: tabMeta.line_index || 0,
+          lineItemId: tabMeta.line_item_id || null,
+          isCard: tabMeta.is_card || false,
+          autoSelectedFolder: tabMeta.auto_selected_folder || null,
+          selectedFolder: tabMeta.selected_folder || null,
           pdfFile,
           pdfDataUrl,
           fileType,
