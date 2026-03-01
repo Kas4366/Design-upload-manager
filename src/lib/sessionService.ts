@@ -368,9 +368,15 @@ export async function loadSessionData(sessionId: string): Promise<OrderWithTabs[
       const tabs: UploadTab[] = [];
 
       for (const tabMeta of tabMetadata) {
-        if (!tabMeta || !tabMeta.tab_id) {
+        if (!tabMeta || !tabMeta.tab_id || !tabMeta.sku) {
           console.warn('Invalid tab metadata found, skipping:', tabMeta);
           continue;
+        }
+
+        // Validate required tab properties
+        if (tabMeta.tab_number === null || tabMeta.tab_number === undefined) {
+          console.warn('Tab metadata missing tab_number, setting to 0:', tabMeta);
+          tabMeta.tab_number = 0;
         }
 
         const uploadedFile = uploadedFiles.find(
@@ -440,11 +446,16 @@ export async function loadSessionData(sessionId: string): Promise<OrderWithTabs[
         });
       }
 
-      ordersWithTabs.push({
-        ...order,
-        tabs,
-        imageUrls: []
-      });
+      // Only add order if it has at least one valid tab
+      if (tabs.length > 0) {
+        ordersWithTabs.push({
+          ...order,
+          tabs,
+          imageUrls: []
+        });
+      } else {
+        console.warn('Order has no valid tabs, skipping:', order.order_number);
+      }
     }
 
     return ordersWithTabs;

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Upload, Check, AlertCircle, FileImage, RotateCcw } from 'lucide-react';
-import { PDFPreview } from './PDFPreview';
+import { InteractivePlacement } from './InteractivePlacement';
 import { productTypePositionService, ProductTypePosition } from '../lib/productTypePositionService';
 
 export function WrapperPositionSettings() {
@@ -157,9 +157,9 @@ export function WrapperPositionSettings() {
           <p className="text-sm text-gray-600 mb-4">
             Click on the wrapper image to place the order number. Drag to reposition, use the controls to adjust size and rotation.
           </p>
-          <PDFPreview
-            pdfDataUrl={sampleDataUrl}
-            orderNumber="12345"
+          <InteractivePlacement
+            dataUrl={sampleDataUrl}
+            orderNumber="Sample #12345"
             onPositionChange={handlePositionChange}
             initialPosition={position}
             fileType="image"

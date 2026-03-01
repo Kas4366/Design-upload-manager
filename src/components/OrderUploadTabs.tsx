@@ -35,7 +35,7 @@ export function OrderUploadTabs({
   const containerRef = useRef<HTMLDivElement>(null);
 
   const activeTab = order.tabs.find(t => t.id === activeTabId) || order.tabs[0];
-  const cardPair = isCardTab(activeTab) ? findCardPair(order.tabs, activeTabId) : null;
+  const cardPair = (activeTab && isCardTab(activeTab)) ? findCardPair(order.tabs, activeTabId) : null;
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>, tabId?: string) => {
     const file = e.target.files?.[0];
@@ -51,7 +51,7 @@ export function OrderUploadTabs({
 
   const handleTabSwitch = (newTabId: string) => {
     // Only validate folder selection if the current tab has a file uploaded
-    if (activeTab.pdfFile && !activeTab.selectedFolder) {
+    if (activeTab && activeTab.pdfFile && !activeTab.selectedFolder) {
       setValidationError('Please select a folder destination before switching tabs.');
       return;
     }
@@ -91,6 +91,19 @@ export function OrderUploadTabs({
   }).length;
 
   const foldersSelectedCount = order.tabs.filter(t => t.selectedFolder).length;
+
+  // Safety check: if no active tab, show error
+  if (!activeTab) {
+    return (
+      <div className="flex items-center justify-center h-full bg-white p-6">
+        <div className="text-center">
+          <AlertCircle className="w-12 h-12 mx-auto mb-4 text-red-500" />
+          <h3 className="text-lg font-semibold text-gray-900 mb-2">Unable to load session</h3>
+          <p className="text-gray-600">This order has no valid tabs. Please try a different session.</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col h-full bg-white">
