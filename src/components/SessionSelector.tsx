@@ -1,14 +1,14 @@
 import { useState, useEffect } from 'react';
-import { FileText, Clock, CheckCircle, Trash2, RefreshCw, AlertCircle } from 'lucide-react';
+import { FileText, Clock, CheckCircle, Trash2, RefreshCw, AlertCircle, X, Calendar } from 'lucide-react';
 import { getAllActiveSessions, deleteSession, SessionInfo } from '../lib/sessionService';
 import { deleteSessionFiles } from '../lib/cloudStorage';
 
 interface SessionSelectorProps {
-  onSessionSelected: (sessionId: string, csvFilename: string) => void;
+  onSessionSelect: (sessionId: string) => void;
   onClose: () => void;
 }
 
-export function SessionSelector({ onSessionSelected, onClose }: SessionSelectorProps) {
+export function SessionSelector({ onSessionSelect, onClose }: SessionSelectorProps) {
   const [sessions, setSessions] = useState<SessionInfo[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [deletingSessionId, setDeletingSessionId] = useState<string | null>(null);
@@ -116,21 +116,29 @@ export function SessionSelector({ onSessionSelected, onClose }: SessionSelectorP
                 <div
                   key={session.id}
                   className="border border-gray-200 rounded-lg p-5 hover:border-blue-300 hover:bg-blue-50 transition-all cursor-pointer"
-                  onClick={() => onSessionSelected(session.id, session.csvFilename)}
+                  onClick={() => onSessionSelect(session.id)}
                 >
                   <div className="flex items-start justify-between">
                     <div className="flex-1">
-                      <div className="flex items-center gap-3 mb-2">
+                      <div className="flex items-center gap-3 mb-3">
                         <FileText className="w-5 h-5 text-blue-600 flex-shrink-0" />
                         <h3 className="text-lg font-semibold text-gray-900">{session.csvFilename}</h3>
                       </div>
 
-                      <div className="flex items-center gap-6 text-sm text-gray-600 mb-3">
+                      <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm text-gray-600 mb-3">
+                        <div className="flex items-center gap-2">
+                          <Calendar className="w-4 h-4" />
+                          <span>
+                            <span className="font-medium">Started:</span> {formatDate(session.uploadedAt)}
+                          </span>
+                        </div>
                         <div className="flex items-center gap-2">
                           <Clock className="w-4 h-4" />
-                          <span>{formatDate(session.lastAccessedAt)}</span>
+                          <span>
+                            <span className="font-medium">Last accessed:</span> {formatDate(session.lastAccessedAt)}
+                          </span>
                         </div>
-                        <div className={`flex items-center gap-2 font-medium ${getProgressColor(session.completedOrders, session.totalOrders)}`}>
+                        <div className={`col-span-2 flex items-center gap-2 font-medium ${getProgressColor(session.completedOrders, session.totalOrders)}`}>
                           <CheckCircle className="w-4 h-4" />
                           <span>{session.completedOrders} of {session.totalOrders} orders completed</span>
                         </div>
@@ -191,3 +199,5 @@ export function SessionSelector({ onSessionSelected, onClose }: SessionSelectorP
     </div>
   );
 }
+
+export default SessionSelector;

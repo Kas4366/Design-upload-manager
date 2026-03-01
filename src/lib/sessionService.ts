@@ -1,5 +1,6 @@
 import { supabase } from './supabase';
-import { CSVRow } from './types';
+import { CSVRow, OrderWithTabs, UploadTab } from './types';
+import { getSessionFiles, fetchFileAsBlob } from './cloudStorage';
 
 export interface SessionInfo {
   id: string;
@@ -309,4 +310,112 @@ export async function getOldSessions(days: number = 30): Promise<SessionInfo[]> 
     totalOrders: 0,
     completedOrders: 0
   }));
+}
+
+export async function loadSessionData(sessionId: string): Promise<OrderWithTabs[] | null> {
+  try {
+    const { data: orders, error: ordersError } = await supabase
+      .from('order_items')
+      .select('*')
+      .eq('session_id', sessionId)
+      .order('order_number');
+
+    if (ordersError || !orders) {
+      console.error('Error loading orders:', ordersError);
+      return null;
+    }
+
+    const { data: allLineItems, error: lineItemsError } = await supabase
+      .from('order_line_items')
+      .select('*')
+      .in('order_item_id', orders.map(o => o.id))
+      .order('line_index');
+
+    if (lineItemsError) {
+      console.error('Error loading line items:', lineItemsError);
+      return null;
+    }
+
+    const { data: allTabMetadata, error: tabMetadataError } = await supabase
+      .from('tab_metadata')
+      .select('*')
+      .in('order_item_id', orders.map(o => o.id))
+      .order('tab_number');
+
+    if (tabMetadataError) {
+      console.error('Error loading tab metadata:', tabMetadataError);
+      return null;
+    }
+
+    const uploadedFiles = await getSessionFiles(sessionId);
+    const positions = await getSessionPositions(sessionId);
+
+    const ordersWithTabs: OrderWithTabs[] = [];
+
+    for (const order of orders) {
+      const lineItems = (allLineItems || []).filter(li => li.order_item_id === order.id);
+      const tabMetadata = (allTabMetadata || []).filter(tm => tm.order_item_id === order.id);
+
+      const tabs: UploadTab[] = [];
+
+      for (const tabMeta of tabMetadata) {
+        const uploadedFile = uploadedFiles.find(
+          f => f.orderItemId === order.id && f.tabId === tabMeta.tab_id
+        );
+
+        let pdfFile: File | null = null;
+        let pdfDataUrl: string | null = null;
+        let fileType: 'pdf' | 'jpg' | null = null;
+
+        if (uploadedFile) {
+          const blob = await fetchFileAsBlob(uploadedFile.storageUrl);
+          if (blob) {
+            pdfFile = new File([blob], uploadedFile.originalFilename, { type: blob.type });
+            pdfDataUrl = URL.createObjectURL(blob);
+            fileType = uploadedFile.fileType === 'pdf' ? 'pdf' : 'jpg';
+          }
+        }
+
+        const position = positions.find(
+          p => p.orderItemId === order.id && p.tabId === tabMeta.tab_id
+        );
+
+        tabs.push({
+          id: tabMeta.tab_id,
+          label: `Tab ${tabMeta.tab_number}`,
+          tabNumber: tabMeta.tab_number,
+          sku: tabMeta.sku,
+          lineIndex: tabMeta.line_index,
+          lineItemId: tabMeta.line_item_id,
+          isCard: tabMeta.is_card,
+          autoSelectedFolder: tabMeta.auto_selected_folder,
+          selectedFolder: tabMeta.selected_folder,
+          pdfFile,
+          pdfDataUrl,
+          fileType,
+          fileWidth: null,
+          fileHeight: null,
+          isAutoLoaded: !!uploadedFile,
+          orderNumberPlaced: !!position,
+          position: position ? {
+            x: position.xPosition,
+            y: position.yPosition,
+            fontSize: position.fontSize,
+            rotation: position.rotation
+          } : null
+        });
+      }
+
+      ordersWithTabs.push({
+        ...order,
+        tabs,
+        imageUrls: []
+      });
+    }
+
+    return ordersWithTabs;
+  } catch (error) {
+    console.error('Unexpected error loading session:', error);
+    return null;
+  }
 }

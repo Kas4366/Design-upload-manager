@@ -434,19 +434,27 @@ export function SettingsScreenWeb({ onClose }: SettingsScreenProps) {
                 {sessions.length > 0 && (
                   <div className="space-y-3">
                     {sessions.map(session => (
-                      <div key={session.id} className="flex items-center justify-between p-4 border border-gray-200 rounded-lg">
-                        <div>
-                          <p className="font-medium text-gray-900">{session.csvFilename}</p>
-                          <p className="text-sm text-gray-600">
-                            {session.completedOrders} of {session.totalOrders} orders completed
-                          </p>
+                      <div key={session.id} className="flex items-start justify-between p-4 border border-gray-200 rounded-lg">
+                        <div className="flex-1">
+                          <p className="font-medium text-gray-900 mb-2">{session.csvFilename}</p>
+                          <div className="space-y-1 text-sm text-gray-600">
+                            <p>
+                              <span className="font-medium">Started:</span> {new Date(session.uploadedAt).toLocaleString()}
+                            </p>
+                            <p>
+                              <span className="font-medium">Last accessed:</span> {new Date(session.lastAccessedAt).toLocaleString()}
+                            </p>
+                            <p>
+                              <span className="font-medium">Progress:</span> {session.completedOrders} of {session.totalOrders} orders completed
+                            </p>
+                          </div>
                         </div>
                         <button
                           onClick={() => handleDeleteSession(session.id, session.csvFilename)}
                           disabled={deletingSessionId === session.id}
-                          className="px-3 py-1 text-red-600 hover:bg-red-50 rounded transition-colors disabled:opacity-50"
+                          className="px-3 py-1 text-red-600 hover:bg-red-50 rounded transition-colors disabled:opacity-50 flex-shrink-0"
                         >
-                          Delete
+                          {deletingSessionId === session.id ? 'Deleting...' : 'Delete'}
                         </button>
                       </div>
                     ))}

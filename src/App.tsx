@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Settings, FileUp, List, Upload, CheckSquare, Eye } from 'lucide-react';
+import { Settings, FileUp, List, Upload, CheckSquare, Eye, FolderOpen } from 'lucide-react';
 import { CSVUpload } from './components/CSVUpload';
 import { OrderDashboard } from './components/OrderDashboard';
 import { OrderUploadTabs } from './components/OrderUploadTabs';
@@ -8,6 +8,7 @@ import { SettingsScreenWeb as SettingsScreen } from './components/SettingsScreen
 import { SKURoutingRules } from './components/SKURoutingRules';
 import SaveValidationModal from './components/SaveValidationModal';
 import CorrectionCheckModal from './components/CorrectionCheckModal';
+import SessionSelector from './components/SessionSelector';
 import { supabase } from './lib/supabase';
 import { parseCSV, convertCSVRowsToOrderItems, createEmptyTabs, extractImageUrls, createLineItemsForOrder, calculateTabsForOrder, isCardSKU } from './lib/csvParser';
 import { fileSaverService } from './lib/fileSaver';
@@ -15,10 +16,11 @@ import { folderSelectionService } from './lib/folderSelectionService';
 import { skuPositionService } from './lib/db';
 import { premadeDesignService } from './lib/premadeDesignService';
 import { getFileDimensions } from './lib/pdfProcessor';
+import { loadSessionData, updateSessionAccess, findSessionByCSVFilename, archiveSession } from './lib/sessionService';
 import type { CSVRow, OrderWithTabs, ProcessingSession, UploadTab, FolderType, SKURoutingRule } from './lib/types';
 
 type AppView = 'upload' | 'orders';
-type ModalView = 'settings' | 'routing' | 'placement' | 'save-validation' | 'correction-check' | null;
+type ModalView = 'settings' | 'routing' | 'placement' | 'save-validation' | 'correction-check' | 'session-selector' | null;
 
 function App() {
   const [view, setView] = useState<AppView>('upload');
@@ -34,6 +36,16 @@ function App() {
     loadFoldersAndRules();
     testDatabaseConnection();
   }, []);
+
+  useEffect(() => {
+    if (!currentSession) return;
+
+    const updateInterval = setInterval(() => {
+      updateSessionAccess(currentSession.id);
+    }, 5 * 60 * 1000);
+
+    return () => clearInterval(updateInterval);
+  }, [currentSession]);
 
   const testDatabaseConnection = async () => {
     try {
@@ -60,7 +72,56 @@ function App() {
     setRoutingRules(rules);
   };
 
+  const handleLoadSession = async (sessionId: string) => {
+    const { data: session, error: sessionError } = await supabase
+      .from('processing_sessions')
+      .select('*')
+      .eq('id', sessionId)
+      .single();
+
+    if (sessionError || !session) {
+      alert('Failed to load session');
+      return;
+    }
+
+    const ordersWithTabs = await loadSessionData(sessionId);
+
+    if (!ordersWithTabs) {
+      alert('Failed to load session data');
+      return;
+    }
+
+    await updateSessionAccess(sessionId);
+
+    setCurrentSession(session);
+    setOrders(ordersWithTabs);
+    if (ordersWithTabs.length > 0) {
+      setSelectedOrder(ordersWithTabs[0]);
+    }
+    setView('orders');
+    setModalView(null);
+  };
+
   const handleCSVParsed = async (rows: CSVRow[], filename: string) => {
+    const existingSession = await findSessionByCSVFilename(filename);
+
+    if (existingSession) {
+      const confirmed = window.confirm(
+        `A session for "${filename}" already exists.\n\n` +
+        `Started: ${new Date(existingSession.uploadedAt).toLocaleString()}\n` +
+        `Last accessed: ${new Date(existingSession.lastAccessedAt).toLocaleString()}\n` +
+        `Progress: ${existingSession.completedOrders}/${existingSession.totalOrders} orders\n\n` +
+        `Click OK to resume the existing session, or Cancel to start fresh.`
+      );
+
+      if (confirmed) {
+        await handleLoadSession(existingSession.id);
+        return;
+      } else {
+        await archiveSession(existingSession.id);
+      }
+    }
+
     // Group CSV rows by order_number to get unique order count
     const groupedByOrderNumber = new Map<string, CSVRow[]>();
     rows.forEach(row => {
@@ -75,9 +136,11 @@ function App() {
       .from('processing_sessions')
       .insert([{
         csv_filename: filename,
-        total_orders: groupedByOrderNumber.size, // Count unique orders, not CSV lines
+        total_orders: groupedByOrderNumber.size,
         completed_orders: 0,
-        status: 'in_progress'
+        status: 'in_progress',
+        uploaded_at: new Date().toISOString(),
+        last_accessed_at: new Date().toISOString()
       }])
       .select()
       .single();
@@ -606,7 +669,32 @@ function App() {
             </div>
           </header>
 
-          <CSVUpload onCSVParsed={handleCSVParsed} />
+          <div className="space-y-6">
+            <CSVUpload onCSVParsed={handleCSVParsed} />
+
+            <div className="flex items-center gap-4 max-w-2xl mx-auto">
+              <div className="flex-1 h-px bg-gray-300"></div>
+              <span className="text-gray-500 font-medium">OR</span>
+              <div className="flex-1 h-px bg-gray-300"></div>
+            </div>
+
+            <div className="max-w-2xl mx-auto">
+              <button
+                onClick={() => setModalView('session-selector')}
+                className="w-full flex items-center justify-center gap-3 px-6 py-4 bg-white border-2 border-gray-300 hover:border-blue-500 hover:bg-blue-50 rounded-lg transition-all group"
+              >
+                <FolderOpen className="w-6 h-6 text-gray-600 group-hover:text-blue-600" />
+                <div className="text-left">
+                  <div className="font-semibold text-gray-900 group-hover:text-blue-900">
+                    Load Existing Session
+                  </div>
+                  <div className="text-sm text-gray-600 group-hover:text-blue-700">
+                    Resume work from a previous CSV upload
+                  </div>
+                </div>
+              </button>
+            </div>
+          </div>
         </div>
 
         {modalView === 'settings' && (
@@ -614,6 +702,12 @@ function App() {
         )}
         {modalView === 'routing' && (
           <SKURoutingRules onClose={() => setModalView(null)} />
+        )}
+        {modalView === 'session-selector' && (
+          <SessionSelector
+            onSessionSelect={handleLoadSession}
+            onClose={() => setModalView(null)}
+          />
         )}
       </div>
     );
