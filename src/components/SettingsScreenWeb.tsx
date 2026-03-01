@@ -5,6 +5,7 @@ import { parseCSVHeaders } from '../lib/csvParser';
 import { loadColumnMappings, saveColumnMappings, clearColumnMappings, getDefaultColumnNames } from '../lib/columnMappings';
 import { CSVColumnMapping } from '../lib/types';
 import { FolderTypesManager } from './FolderTypesManager';
+import { WrapperPositionSettings } from './WrapperPositionSettings';
 import { folderTypesService } from '../lib/folderTypesService';
 import { fileSaverService } from '../lib/fileSaver';
 import { fileSystemAPI } from '../lib/fileSystemAccess';
@@ -33,7 +34,7 @@ export function SettingsScreenWeb({ onClose }: SettingsScreenProps) {
   const [showFolderTypesManager, setShowFolderTypesManager] = useState(false);
   const [folderTypesCount, setFolderTypesCount] = useState(0);
 
-  const [activeTab, setActiveTab] = useState<'general' | 'csv-mapping' | 'folders' | 'cleanup'>('general');
+  const [activeTab, setActiveTab] = useState<'general' | 'csv-mapping' | 'folders' | 'wrapper-position' | 'cleanup'>('general');
 
   const [sessions, setSessions] = useState<any[]>([]);
   const [isLoadingSessions, setIsLoadingSessions] = useState(false);
@@ -249,6 +250,16 @@ export function SettingsScreenWeb({ onClose }: SettingsScreenProps) {
             Folder Types ({folderTypesCount})
           </button>
           <button
+            onClick={() => setActiveTab('wrapper-position')}
+            className={`px-6 py-3 font-medium transition-colors ${
+              activeTab === 'wrapper-position'
+                ? 'text-blue-600 border-b-2 border-blue-600'
+                : 'text-gray-600 hover:text-gray-900'
+            }`}
+          >
+            Wrapper Position
+          </button>
+          <button
             onClick={() => {
               setActiveTab('cleanup');
               if (sessions.length === 0) loadSessions();
@@ -412,6 +423,10 @@ export function SettingsScreenWeb({ onClose }: SettingsScreenProps) {
                 </button>
               </div>
             </div>
+          )}
+
+          {activeTab === 'wrapper-position' && (
+            <WrapperPositionSettings />
           )}
 
           {activeTab === 'cleanup' && (

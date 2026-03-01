@@ -1,6 +1,7 @@
 import { supabase } from './supabase';
 import { CSVRow, OrderWithTabs, UploadTab } from './types';
 import { getSessionFiles, fetchFileAsBlob } from './cloudStorage';
+import { productTypePositionService } from './productTypePositionService';
 
 export interface SessionInfo {
   id: string;
@@ -393,6 +394,31 @@ export async function loadSessionData(sessionId: string): Promise<OrderWithTabs[
           p => p.orderItemId === order.id && p.tabId === tabMeta.tab_id
         );
 
+        let finalPosition = position ? {
+          x: position.xPosition,
+          y: position.yPosition,
+          fontSize: position.fontSize,
+          rotation: position.rotation
+        } : null;
+
+        let hasPosition = !!position;
+
+        if (!position) {
+          const productType = productTypePositionService.getProductType(tabMeta.sku || '', order.product_title || '');
+          if (productType) {
+            const typePosition = await productTypePositionService.getPositionByType(productType);
+            if (typePosition) {
+              finalPosition = {
+                x: typePosition.x_position,
+                y: typePosition.y_position,
+                fontSize: typePosition.font_size,
+                rotation: typePosition.rotation
+              };
+              hasPosition = true;
+            }
+          }
+        }
+
         tabs.push({
           id: tabMeta.tab_id,
           label: tabMeta.label || `Tab ${tabMeta.tab_number || 0}`,
@@ -409,13 +435,8 @@ export async function loadSessionData(sessionId: string): Promise<OrderWithTabs[
           fileWidth: null,
           fileHeight: null,
           isAutoLoaded: !!uploadedFile,
-          orderNumberPlaced: !!position,
-          position: position ? {
-            x: position.xPosition,
-            y: position.yPosition,
-            fontSize: position.fontSize,
-            rotation: position.rotation
-          } : null
+          orderNumberPlaced: hasPosition,
+          position: finalPosition
         });
       }
 

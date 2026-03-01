@@ -287,15 +287,30 @@ function App() {
               tab.fileWidth = dimensions.width;
               tab.fileHeight = dimensions.height;
               tab.isAutoLoaded = true;
-              tab.orderNumberPlaced = savedPosition ? true : false;
-              tab.position = savedPosition
-                ? {
-                    x: savedPosition.x_position,
-                    y: savedPosition.y_position,
-                    fontSize: savedPosition.font_size,
-                    rotation: savedPosition.rotation
+
+              if (savedPosition) {
+                tab.orderNumberPlaced = true;
+                tab.position = {
+                  x: savedPosition.x_position,
+                  y: savedPosition.y_position,
+                  fontSize: savedPosition.font_size,
+                  rotation: savedPosition.rotation
+                };
+              } else {
+                const productType = productTypePositionService.getProductType(tab.sku, order.product_title);
+                if (productType) {
+                  const typePosition = await productTypePositionService.getPositionByType(productType);
+                  if (typePosition) {
+                    tab.orderNumberPlaced = true;
+                    tab.position = {
+                      x: typePosition.x_position,
+                      y: typePosition.y_position,
+                      fontSize: typePosition.font_size,
+                      rotation: typePosition.rotation
+                    };
                   }
-                : null;
+                }
+              }
             }
           } catch (error) {
             console.error('Failed to auto-load design for SKU:', tab.sku, error);
@@ -703,76 +718,90 @@ function App() {
 
   if (view === 'upload') {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50">
-        <div className="container mx-auto px-4 py-8">
-          <header className="mb-8 flex items-center justify-between">
-            <div>
-              <h1 className="text-4xl font-bold text-gray-900 mb-2">
-                Design Upload Manager
-              </h1>
-              <p className="text-gray-600">
-                Upload CSV to process orders and manage design files
-              </p>
-            </div>
-            <div className="flex gap-3">
-              <button
-                onClick={() => setModalView('routing')}
-                className="flex items-center gap-2 px-4 py-2 bg-gray-700 text-white rounded-lg hover:bg-gray-800 transition-colors"
-              >
-                <List className="w-5 h-5" />
-                SKU Rules
-              </button>
-              <button
-                onClick={() => setModalView('settings')}
-                className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-              >
-                <Settings className="w-5 h-5" />
-                Settings
-              </button>
-            </div>
-          </header>
+      <>
+        <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50">
+          <div className="container mx-auto px-4 py-8">
+            <header className="mb-8 flex items-center justify-between">
+              <div>
+                <h1 className="text-4xl font-bold text-gray-900 mb-2">
+                  Design Upload Manager
+                </h1>
+                <p className="text-gray-600">
+                  Upload CSV to process orders and manage design files
+                </p>
+              </div>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setModalView('routing')}
+                  className="flex items-center gap-2 px-4 py-2 bg-gray-700 text-white rounded-lg hover:bg-gray-800 transition-colors"
+                >
+                  <List className="w-5 h-5" />
+                  SKU Rules
+                </button>
+                <button
+                  onClick={() => setModalView('settings')}
+                  className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                >
+                  <Settings className="w-5 h-5" />
+                  Settings
+                </button>
+              </div>
+            </header>
 
-          <div className="space-y-6">
-            <CSVUpload onCSVParsed={handleCSVParsed} />
+            <div className="space-y-6">
+              <CSVUpload onCSVParsed={handleCSVParsed} />
 
-            <div className="flex items-center gap-4 max-w-2xl mx-auto">
-              <div className="flex-1 h-px bg-gray-300"></div>
-              <span className="text-gray-500 font-medium">OR</span>
-              <div className="flex-1 h-px bg-gray-300"></div>
-            </div>
+              <div className="flex items-center gap-4 max-w-2xl mx-auto">
+                <div className="flex-1 h-px bg-gray-300"></div>
+                <span className="text-gray-500 font-medium">OR</span>
+                <div className="flex-1 h-px bg-gray-300"></div>
+              </div>
 
-            <div className="max-w-2xl mx-auto">
-              <button
-                onClick={() => setModalView('session-selector')}
-                className="w-full flex items-center justify-center gap-3 px-6 py-4 bg-white border-2 border-gray-300 hover:border-blue-500 hover:bg-blue-50 rounded-lg transition-all group"
-              >
-                <FolderOpen className="w-6 h-6 text-gray-600 group-hover:text-blue-600" />
-                <div className="text-left">
-                  <div className="font-semibold text-gray-900 group-hover:text-blue-900">
-                    Load Existing Session
+              <div className="max-w-2xl mx-auto">
+                <button
+                  onClick={() => setModalView('session-selector')}
+                  className="w-full flex items-center justify-center gap-3 px-6 py-4 bg-white border-2 border-gray-300 hover:border-blue-500 hover:bg-blue-50 rounded-lg transition-all group"
+                >
+                  <FolderOpen className="w-6 h-6 text-gray-600 group-hover:text-blue-600" />
+                  <div className="text-left">
+                    <div className="font-semibold text-gray-900 group-hover:text-blue-900">
+                      Load Existing Session
+                    </div>
+                    <div className="text-sm text-gray-600 group-hover:text-blue-700">
+                      Resume work from a previous CSV upload
+                    </div>
                   </div>
-                  <div className="text-sm text-gray-600 group-hover:text-blue-700">
-                    Resume work from a previous CSV upload
-                  </div>
-                </div>
-              </button>
+                </button>
+              </div>
             </div>
           </div>
+
+          {modalView === 'settings' && (
+            <SettingsScreen onClose={() => setModalView(null)} />
+          )}
+          {modalView === 'routing' && (
+            <SKURoutingRules onClose={() => setModalView(null)} />
+          )}
+          {modalView === 'session-selector' && (
+            <SessionSelector
+              onSessionSelect={handleLoadSession}
+              onClose={() => setModalView(null)}
+            />
+          )}
         </div>
 
-        {modalView === 'settings' && (
-          <SettingsScreen onClose={() => setModalView(null)} />
+        {isUploadingCSV && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-white rounded-lg p-8 max-w-md w-full mx-4 shadow-2xl">
+              <div className="flex flex-col items-center">
+                <div className="animate-spin rounded-full h-16 w-16 border-b-4 border-blue-600 mb-4"></div>
+                <h3 className="text-xl font-semibold text-gray-800 mb-2">Processing CSV</h3>
+                <p className="text-gray-600 text-center">{uploadProgress}</p>
+              </div>
+            </div>
+          </div>
         )}
-        {modalView === 'routing' && (
-          <SKURoutingRules onClose={() => setModalView(null)} />
-        )}
-        {modalView === 'session-selector' && (
-          <SessionSelector
-            onSessionSelect={handleLoadSession}
-            onClose={() => setModalView(null)}
-          />
-        )}
-      </div>
+      </>
     );
   }
 
@@ -905,18 +934,6 @@ function App() {
           onClose={() => setPlacementTab(null)}
           onSavePosition={(_, x, y, fontSize, rotation) => handleSavePosition(x, y, fontSize, rotation)}
         />
-      )}
-
-      {isUploadingCSV && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-8 max-w-md w-full mx-4 shadow-2xl">
-            <div className="flex flex-col items-center">
-              <div className="animate-spin rounded-full h-16 w-16 border-b-4 border-blue-600 mb-4"></div>
-              <h3 className="text-xl font-semibold text-gray-800 mb-2">Processing CSV</h3>
-              <p className="text-gray-600 text-center">{uploadProgress}</p>
-            </div>
-          </div>
-        </div>
       )}
     </div>
   );
