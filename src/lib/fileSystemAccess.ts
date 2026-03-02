@@ -8,6 +8,7 @@ export interface FileSystemAPI {
     data: Uint8Array
   ) => Promise<boolean>;
   verifyPermission: (handle: FileSystemDirectoryHandle) => Promise<boolean>;
+  readFile: (dirHandle: FileSystemDirectoryHandle, filename: string) => Promise<{ file: File; dataUrl: string } | null>;
 }
 
 async function verifyPermission(
@@ -86,6 +87,31 @@ async function saveFile(
   }
 }
 
+async function readFile(
+  dirHandle: FileSystemDirectoryHandle,
+  filename: string
+): Promise<{ file: File; dataUrl: string } | null> {
+  try {
+    const hasPermission = await verifyPermission(dirHandle, false);
+    if (!hasPermission) {
+      console.error('No permission to read from directory');
+      return null;
+    }
+
+    const fileHandle = await dirHandle.getFileHandle(filename);
+    const file = await fileHandle.getFile();
+    const dataUrl = URL.createObjectURL(file);
+
+    return { file, dataUrl };
+  } catch (error) {
+    if (error instanceof Error && error.name === 'NotFoundError') {
+      return null;
+    }
+    console.error('Error reading file:', error);
+    return null;
+  }
+}
+
 function isFileSystemAccessSupported(): boolean {
   return 'showDirectoryPicker' in window;
 }
@@ -94,7 +120,8 @@ export const fileSystemAPI: FileSystemAPI = {
   isSupported: isFileSystemAccessSupported(),
   requestFolderAccess,
   saveFile,
-  verifyPermission
+  verifyPermission,
+  readFile
 };
 
 const DB_NAME = 'DesignUploadManager';
@@ -166,5 +193,57 @@ export async function clearFolderHandle(): Promise<void> {
     });
   } catch (error) {
     console.error('Error clearing folder handle:', error);
+  }
+}
+
+export async function savePremadeFolderHandle(handle: FileSystemDirectoryHandle): Promise<void> {
+  try {
+    const db = await openDB();
+    const transaction = db.transaction(STORE_NAME, 'readwrite');
+    const store = transaction.objectStore(STORE_NAME);
+    store.put(handle, 'premadeFolderHandle');
+
+    await new Promise<void>((resolve, reject) => {
+      transaction.oncomplete = () => resolve();
+      transaction.onerror = () => reject(transaction.error);
+    });
+  } catch (error) {
+    console.error('Error saving premade folder handle:', error);
+  }
+}
+
+export async function loadPremadeFolderHandle(): Promise<FileSystemDirectoryHandle | null> {
+  try {
+    const db = await openDB();
+    const transaction = db.transaction(STORE_NAME, 'readonly');
+    const store = transaction.objectStore(STORE_NAME);
+    const request = store.get('premadeFolderHandle');
+
+    return new Promise((resolve, reject) => {
+      request.onsuccess = () => {
+        const handle = request.result as FileSystemDirectoryHandle | undefined;
+        resolve(handle || null);
+      };
+      request.onerror = () => reject(request.error);
+    });
+  } catch (error) {
+    console.error('Error loading premade folder handle:', error);
+    return null;
+  }
+}
+
+export async function clearPremadeFolderHandle(): Promise<void> {
+  try {
+    const db = await openDB();
+    const transaction = db.transaction(STORE_NAME, 'readwrite');
+    const store = transaction.objectStore(STORE_NAME);
+    store.delete('premadeFolderHandle');
+
+    await new Promise<void>((resolve, reject) => {
+      transaction.oncomplete = () => resolve();
+      transaction.onerror = () => reject(transaction.error);
+    });
+  } catch (error) {
+    console.error('Error clearing premade folder handle:', error);
   }
 }

@@ -1,7 +1,9 @@
 import { supabase } from './supabase';
-import { CSVRow, OrderWithTabs, UploadTab } from './types';
+import { CSVRow, OrderWithTabs, UploadTab, OrderLineItem, SKURoutingRule } from './types';
 import { getSessionFiles, fetchFileAsBlob } from './cloudStorage';
 import { productTypePositionService } from './productTypePositionService';
+import { calculateTabsForOrder, createEmptyTabs, isCardSKU } from './csvParser';
+import { folderSelectionService } from './folderSelectionService';
 
 export interface SessionInfo {
   id: string;
@@ -321,6 +323,42 @@ export async function getOldSessions(days: number = 30): Promise<SessionInfo[]> 
   }));
 }
 
+async function reconstructTabsFromLineItems(
+  orderId: string,
+  lineItems: OrderLineItem[],
+  routingRules: SKURoutingRule[]
+): Promise<UploadTab[]> {
+  let globalTabNumber = 1;
+  const allTabs: UploadTab[] = [];
+
+  for (const lineItem of lineItems) {
+    const tabsForLine = calculateTabsForOrder(
+      lineItem.sku,
+      lineItem.product_title,
+      lineItem.quantity,
+      lineItem.number_of_lines
+    );
+    const isCard = isCardSKU(lineItem.product_title);
+    const autoSelectedFolder = folderSelectionService.determineAutoSelectedFolder(lineItem.sku, routingRules);
+
+    const tabs = createEmptyTabs(
+      lineItem.sku,
+      lineItem.product_title,
+      tabsForLine,
+      globalTabNumber,
+      lineItem.line_index,
+      isCard,
+      autoSelectedFolder,
+      lineItem.id
+    );
+
+    allTabs.push(...tabs);
+    globalTabNumber += tabsForLine;
+  }
+
+  return allTabs;
+}
+
 export async function loadSessionData(sessionId: string): Promise<OrderWithTabs[] | null> {
   try {
     const { data: orders, error: ordersError } = await supabase
@@ -359,25 +397,44 @@ export async function loadSessionData(sessionId: string): Promise<OrderWithTabs[
     const uploadedFiles = await getSessionFiles(sessionId);
     const positions = await getSessionPositions(sessionId);
 
+    // Check if we need to use migration fallback
+    const hasTabMetadata = allTabMetadata && allTabMetadata.length > 0;
+    const hasLineItems = allLineItems && allLineItems.length > 0;
+
+    // Load routing rules for tab reconstruction
+    let routingRules: SKURoutingRule[] = [];
+    if (!hasTabMetadata && hasLineItems) {
+      console.log('Tab metadata missing, reconstructing from line items...');
+      const { data: rulesData } = await supabase
+        .from('sku_routing_rules')
+        .select('*')
+        .eq('active', true)
+        .order('priority', { ascending: false });
+      routingRules = rulesData || [];
+    }
+
     const ordersWithTabs: OrderWithTabs[] = [];
 
     for (const order of orders) {
       const lineItems = (allLineItems || []).filter(li => li.order_item_id === order.id);
       const tabMetadata = (allTabMetadata || []).filter(tm => tm.order_item_id === order.id);
 
-      const tabs: UploadTab[] = [];
+      let tabs: UploadTab[] = [];
 
-      for (const tabMeta of tabMetadata) {
-        if (!tabMeta || !tabMeta.tab_id || !tabMeta.sku) {
-          console.warn('Invalid tab metadata found, skipping:', tabMeta);
-          continue;
-        }
+      // Use tab_metadata if available, otherwise reconstruct from line_items
+      if (tabMetadata.length > 0) {
+        // Existing logic: use tab_metadata
+        for (const tabMeta of tabMetadata) {
+          if (!tabMeta || !tabMeta.tab_id || !tabMeta.sku) {
+            console.warn('Invalid tab metadata found, skipping:', tabMeta);
+            continue;
+          }
 
-        // Validate required tab properties
-        if (tabMeta.tab_number === null || tabMeta.tab_number === undefined) {
-          console.warn('Tab metadata missing tab_number, setting to 0:', tabMeta);
-          tabMeta.tab_number = 0;
-        }
+          // Validate required tab properties
+          if (tabMeta.tab_number === null || tabMeta.tab_number === undefined) {
+            console.warn('Tab metadata missing tab_number, setting to 0:', tabMeta);
+            tabMeta.tab_number = 0;
+          }
 
         const uploadedFile = uploadedFiles.find(
           f => f.orderItemId === order.id && f.tabId === tabMeta.tab_id
@@ -425,25 +482,75 @@ export async function loadSessionData(sessionId: string): Promise<OrderWithTabs[
           }
         }
 
-        tabs.push({
-          id: tabMeta.tab_id,
-          label: tabMeta.label || `Tab ${tabMeta.tab_number || 0}`,
-          tabNumber: tabMeta.tab_number || 0,
-          sku: tabMeta.sku || '',
-          lineIndex: tabMeta.line_index || 0,
-          lineItemId: tabMeta.line_item_id || null,
-          isCard: tabMeta.is_card || false,
-          autoSelectedFolder: tabMeta.auto_selected_folder || null,
-          selectedFolder: tabMeta.selected_folder || null,
-          pdfFile,
-          pdfDataUrl,
-          fileType,
-          fileWidth: null,
-          fileHeight: null,
-          isAutoLoaded: !!uploadedFile,
-          orderNumberPlaced: hasPosition,
-          position: finalPosition
-        });
+          tabs.push({
+            id: tabMeta.tab_id,
+            label: tabMeta.label || `Tab ${tabMeta.tab_number || 0}`,
+            tabNumber: tabMeta.tab_number || 0,
+            sku: tabMeta.sku || '',
+            lineIndex: tabMeta.line_index || 0,
+            lineItemId: tabMeta.line_item_id || null,
+            isCard: tabMeta.is_card || false,
+            autoSelectedFolder: tabMeta.auto_selected_folder || null,
+            selectedFolder: tabMeta.selected_folder || null,
+            pdfFile,
+            pdfDataUrl,
+            fileType,
+            fileWidth: null,
+            fileHeight: null,
+            isAutoLoaded: !!uploadedFile,
+            orderNumberPlaced: hasPosition,
+            position: finalPosition
+          });
+        }
+      } else if (lineItems.length > 0) {
+        // Fallback: reconstruct tabs from line items
+        tabs = await reconstructTabsFromLineItems(order.id, lineItems, routingRules);
+
+        // Apply positions and uploaded files to reconstructed tabs
+        for (const tab of tabs) {
+          const uploadedFile = uploadedFiles.find(
+            f => f.orderItemId === order.id && f.tabId === tab.id
+          );
+
+          if (uploadedFile) {
+            const blob = await fetchFileAsBlob(uploadedFile.storageUrl);
+            if (blob) {
+              tab.pdfFile = new File([blob], uploadedFile.originalFilename, { type: blob.type });
+              tab.pdfDataUrl = URL.createObjectURL(blob);
+              tab.fileType = uploadedFile.fileType === 'pdf' ? 'pdf' : 'jpg';
+              tab.isAutoLoaded = true;
+            }
+          }
+
+          const position = positions.find(
+            p => p.orderItemId === order.id && p.tabId === tab.id
+          );
+
+          if (position) {
+            tab.position = {
+              x: position.xPosition,
+              y: position.yPosition,
+              fontSize: position.fontSize,
+              rotation: position.rotation
+            };
+            tab.orderNumberPlaced = true;
+          } else {
+            // Try to get product type position
+            const productType = productTypePositionService.getProductType(tab.sku, order.product_title || '');
+            if (productType) {
+              const typePosition = await productTypePositionService.getPositionByType(productType);
+              if (typePosition) {
+                tab.position = {
+                  x: typePosition.x_position,
+                  y: typePosition.y_position,
+                  fontSize: typePosition.font_size,
+                  rotation: typePosition.rotation
+                };
+                tab.orderNumberPlaced = true;
+              }
+            }
+          }
+        }
       }
 
       // Only add order if it has at least one valid tab

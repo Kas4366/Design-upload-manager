@@ -8,7 +8,7 @@ import { FolderTypesManager } from './FolderTypesManager';
 import { WrapperPositionSettings } from './WrapperPositionSettings';
 import { folderTypesService } from '../lib/folderTypesService';
 import { fileSaverService } from '../lib/fileSaver';
-import { fileSystemAPI } from '../lib/fileSystemAccess';
+import { fileSystemAPI, loadPremadeFolderHandle, savePremadeFolderHandle, clearPremadeFolderHandle } from '../lib/fileSystemAccess';
 import { getAllActiveSessions, deleteSession } from '../lib/sessionService';
 import { deleteSessionFiles } from '../lib/cloudStorage';
 
@@ -23,6 +23,8 @@ export function SettingsScreenWeb({ onClose }: SettingsScreenProps) {
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [hasSavedFolder, setHasSavedFolder] = useState(false);
+  const [hasPremadeFolder, setHasPremadeFolder] = useState(false);
+  const [premadeFolderName, setPremadeFolderName] = useState<string>('');
 
   const [csvHeaders, setCsvHeaders] = useState<string[]>([]);
   const [csvFile, setCsvFile] = useState<File | null>(null);
@@ -45,11 +47,23 @@ export function SettingsScreenWeb({ onClose }: SettingsScreenProps) {
     loadMappings();
     loadFolderTypesCount();
     checkSavedFolder();
+    checkPremadeFolder();
   }, []);
 
   const checkSavedFolder = async () => {
     const handle = await fileSaverService.getSavedFolderHandle();
     setHasSavedFolder(!!handle);
+  };
+
+  const checkPremadeFolder = async () => {
+    const handle = await loadPremadeFolderHandle();
+    if (handle) {
+      const hasPermission = await fileSystemAPI.verifyPermission(handle);
+      setHasPremadeFolder(hasPermission);
+      if (hasPermission) {
+        setPremadeFolderName(handle.name);
+      }
+    }
   };
 
   const loadFolderTypesCount = async () => {
@@ -98,6 +112,29 @@ export function SettingsScreenWeb({ onClose }: SettingsScreenProps) {
       setHasSavedFolder(true);
       alert('Save location selected successfully!');
     }
+  };
+
+  const handleSelectPremadeFolder = async () => {
+    if (!fileSystemAPI.isSupported) {
+      alert('Your browser does not support the File System Access API.');
+      return;
+    }
+
+    const handle = await fileSystemAPI.requestFolderAccess();
+    if (handle) {
+      await savePremadeFolderHandle(handle);
+      setHasPremadeFolder(true);
+      setPremadeFolderName(handle.name);
+      alert('Premade designs folder selected successfully!');
+    }
+  };
+
+  const handleClearPremadeFolder = async () => {
+    if (!confirm('Clear the premade designs folder selection?')) return;
+
+    await clearPremadeFolderHandle();
+    setHasPremadeFolder(false);
+    setPremadeFolderName('');
   };
 
   const handleSave = async () => {
@@ -310,6 +347,39 @@ export function SettingsScreenWeb({ onClose }: SettingsScreenProps) {
                   {fileSystemAPI.isSupported
                     ? 'Select a folder where design files will be saved with proper folder structure (BL, CD, etc.)'
                     : 'Your browser does not support direct file saving. Files will be downloaded as ZIP archives instead.'}
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Premade Designs Folder (Local)
+                </label>
+                <div className="flex gap-3 flex-wrap">
+                  <button
+                    onClick={handleSelectPremadeFolder}
+                    className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                  >
+                    <Folder className="w-4 h-4" />
+                    {hasPremadeFolder ? 'Change Premade Folder' : 'Select Premade Folder'}
+                  </button>
+                  {hasPremadeFolder && (
+                    <>
+                      <div className="flex items-center gap-2 px-4 py-2 bg-green-100 text-green-800 rounded-lg">
+                        <Check className="w-4 h-4" />
+                        <span>Connected: {premadeFolderName}</span>
+                      </div>
+                      <button
+                        onClick={handleClearPremadeFolder}
+                        className="flex items-center gap-2 px-4 py-2 bg-red-100 text-red-700 rounded-lg hover:bg-red-200 transition-colors"
+                      >
+                        <X className="w-4 h-4" />
+                        Clear
+                      </button>
+                    </>
+                  )}
+                </div>
+                <p className="text-sm text-gray-500 mt-2">
+                  Select the local folder containing your premade design JPG files (e.g., SMCH123.jpg). The app will auto-load these designs for ready-made orders.
                 </p>
               </div>
 

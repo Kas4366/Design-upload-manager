@@ -18,6 +18,8 @@ import { premadeDesignService } from './lib/premadeDesignService';
 import { getFileDimensions } from './lib/pdfProcessor';
 import { loadSessionData, updateSessionAccess, findSessionByCSVFilename, archiveSession } from './lib/sessionService';
 import { productTypePositionService } from './lib/productTypePositionService';
+import { loadPremadeFolderHandle, savePremadeFolderHandle } from './lib/fileSystemAccess';
+import { fileSystemAPI } from './lib/fileSystemAccess';
 import type { CSVRow, OrderWithTabs, ProcessingSession, UploadTab, FolderType, SKURoutingRule } from './lib/types';
 
 type AppView = 'upload' | 'orders';
@@ -92,6 +94,23 @@ function App() {
     if (!ordersWithTabs) {
       alert('Failed to load session data');
       return;
+    }
+
+    // Check if session has ready-made orders and prompt for premade folder if needed
+    const hasReadyMadeOrders = ordersWithTabs.some(order =>
+      premadeDesignService.isReadyMadeOrder(order.product_title, order.customer_note)
+    );
+
+    if (hasReadyMadeOrders) {
+      let premadeHandle = await loadPremadeFolderHandle();
+
+      if (!premadeHandle || !(await fileSystemAPI.verifyPermission(premadeHandle))) {
+        premadeHandle = await fileSystemAPI.requestFolderAccess();
+
+        if (premadeHandle) {
+          await savePremadeFolderHandle(premadeHandle);
+        }
+      }
     }
 
     await updateSessionAccess(sessionId);
@@ -187,6 +206,27 @@ function App() {
 
       if (lineItemsError) {
         console.error('Failed to create line items:', lineItemsError);
+      }
+    }
+
+    // Check if there are any ready-made orders and prompt for premade folder if needed
+    const hasReadyMadeOrders = insertedOrders.some(order =>
+      premadeDesignService.isReadyMadeOrder(order.product_title, order.customer_note)
+    );
+
+    if (hasReadyMadeOrders) {
+      setUploadProgress('Checking premade folder access...');
+      let premadeHandle = await loadPremadeFolderHandle();
+
+      if (!premadeHandle || !(await fileSystemAPI.verifyPermission(premadeHandle))) {
+        setUploadProgress('Please select your premade designs folder...');
+        premadeHandle = await fileSystemAPI.requestFolderAccess();
+
+        if (premadeHandle) {
+          await savePremadeFolderHandle(premadeHandle);
+        } else {
+          console.warn('Premade folder not selected. Ready-made designs will not be auto-loaded.');
+        }
       }
     }
 
