@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { Search, Filter, CheckCircle, Clock, Package } from 'lucide-react';
+import { Search, Filter, CheckCircle, Clock, Package, ArrowUpDown } from 'lucide-react';
 import { OrderWithTabs } from '../lib/types';
 
 interface OrderDashboardProps {
@@ -10,14 +10,16 @@ interface OrderDashboardProps {
 
 type FilterType = 'all' | 'customized' | 'ready-made' | 'pending' | 'uploaded' | 'saved';
 type SKUFilterType = 'all' | 'CH' | 'CD' | 'BL' | 'other';
+type SortType = 'default' | 'sku-asc' | 'sku-desc';
 
 export function OrderDashboard({ orders, onSelectOrder, selectedOrderId }: OrderDashboardProps) {
   const [searchTerm, setSearchTerm] = useState('');
   const [filter, setFilter] = useState<FilterType>('all');
   const [skuFilter, setSKUFilter] = useState<SKUFilterType>('all');
+  const [sortBy, setSortBy] = useState<SortType>('default');
 
   const filteredOrders = useMemo(() => {
-    return orders.filter(order => {
+    const filtered = orders.filter(order => {
       const matchesSearch =
         order.order_number.toLowerCase().includes(searchTerm.toLowerCase()) ||
         order.sku.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -40,7 +42,15 @@ export function OrderDashboard({ orders, onSelectOrder, selectedOrderId }: Order
 
       return matchesSearch && matchesFilter && matchesSKU;
     });
-  }, [orders, searchTerm, filter, skuFilter]);
+
+    if (sortBy === 'sku-asc') {
+      return [...filtered].sort((a, b) => a.sku.localeCompare(b.sku));
+    } else if (sortBy === 'sku-desc') {
+      return [...filtered].sort((a, b) => b.sku.localeCompare(a.sku));
+    }
+
+    return filtered;
+  }, [orders, searchTerm, filter, skuFilter, sortBy]);
 
   const stats = useMemo(() => {
     return {
@@ -126,6 +136,24 @@ export function OrderDashboard({ orders, onSelectOrder, selectedOrderId }: Order
               }`}
             >
               {skuType.toUpperCase()}
+            </button>
+          ))}
+        </div>
+
+        <div className="flex gap-2 flex-wrap mt-2 items-center">
+          <ArrowUpDown className="w-4 h-4 text-gray-500" />
+          <span className="text-sm font-medium text-gray-700">Sort by:</span>
+          {(['default', 'sku-asc', 'sku-desc'] as SortType[]).map(sort => (
+            <button
+              key={sort}
+              onClick={() => setSortBy(sort)}
+              className={`px-3 py-1 rounded-full text-sm font-medium transition-colors ${
+                sortBy === sort
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+              }`}
+            >
+              {sort === 'default' ? 'Default' : sort === 'sku-asc' ? 'SKU A-Z' : 'SKU Z-A'}
             </button>
           ))}
         </div>

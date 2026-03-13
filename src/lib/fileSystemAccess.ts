@@ -247,3 +247,55 @@ export async function clearPremadeFolderHandle(): Promise<void> {
     console.error('Error clearing premade folder handle:', error);
   }
 }
+
+export async function saveReferenceImagesFolderHandle(handle: FileSystemDirectoryHandle): Promise<void> {
+  try {
+    const db = await openDB();
+    const transaction = db.transaction(STORE_NAME, 'readwrite');
+    const store = transaction.objectStore(STORE_NAME);
+    store.put(handle, 'referenceImagesFolderHandle');
+
+    await new Promise<void>((resolve, reject) => {
+      transaction.oncomplete = () => resolve();
+      transaction.onerror = () => reject(transaction.error);
+    });
+  } catch (error) {
+    console.error('Error saving reference images folder handle:', error);
+  }
+}
+
+export async function loadReferenceImagesFolderHandle(): Promise<FileSystemDirectoryHandle | null> {
+  try {
+    const db = await openDB();
+    const transaction = db.transaction(STORE_NAME, 'readonly');
+    const store = transaction.objectStore(STORE_NAME);
+    const request = store.get('referenceImagesFolderHandle');
+
+    return new Promise((resolve, reject) => {
+      request.onsuccess = () => {
+        const handle = request.result as FileSystemDirectoryHandle | undefined;
+        resolve(handle || null);
+      };
+      request.onerror = () => reject(request.error);
+    });
+  } catch (error) {
+    console.error('Error loading reference images folder handle:', error);
+    return null;
+  }
+}
+
+export async function clearReferenceImagesFolderHandle(): Promise<void> {
+  try {
+    const db = await openDB();
+    const transaction = db.transaction(STORE_NAME, 'readwrite');
+    const store = transaction.objectStore(STORE_NAME);
+    store.delete('referenceImagesFolderHandle');
+
+    await new Promise<void>((resolve, reject) => {
+      transaction.oncomplete = () => resolve();
+      transaction.onerror = () => reject(transaction.error);
+    });
+  } catch (error) {
+    console.error('Error clearing reference images folder handle:', error);
+  }
+}

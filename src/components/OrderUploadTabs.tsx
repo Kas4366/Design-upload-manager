@@ -3,6 +3,7 @@ import { Upload, FileText, CheckCircle, X, MapPin, Save, Trash2, Folder, AlertCi
 import { OrderWithTabs, FolderType } from '../lib/types';
 import { findCardPair, isCardTab } from '../lib/csvParser';
 import { FilePreview } from './FilePreview';
+import { ReferenceImageViewer } from './ReferenceImageViewer';
 import { createObjectURLFromFile } from '../lib/pdfProcessor';
 
 interface OrderUploadTabsProps {
@@ -213,6 +214,14 @@ export function OrderUploadTabs({
 
       <div className="flex-1 overflow-y-auto p-6">
         <div className="max-w-7xl mx-auto">
+          <div className="grid grid-cols-1 lg:grid-cols-[350px_1fr] gap-6">
+            <div className="lg:sticky lg:top-0 lg:self-start">
+              <ReferenceImageViewer
+                sku={cardPair ? cardPair.front.sku : activeTab.sku}
+              />
+            </div>
+
+            <div>
           {cardPair ? (
             <div className="grid grid-cols-2 gap-6">
               <div>
@@ -547,7 +556,9 @@ export function OrderUploadTabs({
                 <span className="text-sm font-medium text-gray-700 whitespace-nowrap">Card Design</span>
               </label>
             </div>
+            </div>
           </div>
+        </div>
         </div>
       </div>
     </div>
