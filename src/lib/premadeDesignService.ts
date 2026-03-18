@@ -7,16 +7,26 @@ export const premadeDesignService = {
     const upperSKU = sku.toUpperCase();
 
     if (upperSKU.startsWith('SMCH-')) {
-      const withoutSuffix = upperSKU.split('-').slice(0, 2).join('');
-      return `${withoutSuffix}.jpg`;
+      const parts = upperSKU.split('-');
+      if (parts.length >= 2) {
+        const numberPart = parts[1];
+        return `SMCH${numberPart}.jpg`;
+      }
     }
 
     if (upperSKU.startsWith('LTCH-')) {
       const parts = upperSKU.split('-');
       if (parts.length >= 2) {
-        const chPart = parts[0].substring(2);
-        const numberPart = parts[1].substring(0, 3);
-        return `${chPart}${numberPart}.jpg`;
+        const numberPart = parts[1];
+        return `CH${numberPart}.jpg`;
+      }
+    }
+
+    if (upperSKU.startsWith('CH-')) {
+      const parts = upperSKU.split('-');
+      if (parts.length >= 2) {
+        const numberPart = parts[1];
+        return `CH${numberPart}.jpg`;
       }
     }
 

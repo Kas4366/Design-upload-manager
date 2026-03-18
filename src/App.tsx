@@ -36,6 +36,8 @@ function App() {
   const [routingRules, setRoutingRules] = useState<SKURoutingRule[]>([]);
   const [isUploadingCSV, setIsUploadingCSV] = useState(false);
   const [uploadProgress, setUploadProgress] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveProgress, setSaveProgress] = useState('');
 
   useEffect(() => {
     loadFoldersAndRules();
@@ -660,42 +662,50 @@ function App() {
   const handleSaveOrder = async () => {
     if (!selectedOrder) return;
 
-    const result = await fileSaverService.saveOrderFiles(selectedOrder);
+    setIsSaving(true);
+    setSaveProgress('Saving design files...');
 
-    if (result.success) {
-      let message = 'Files saved successfully!';
+    try {
+      const result = await fileSaverService.saveOrderFiles(selectedOrder);
 
-      if (result.savedPaths && result.savedPaths.length > 0) {
-        message += `\n\nSaved (${result.savedPaths.length}):\n${result.savedPaths.join('\n')}`;
+      if (result.success) {
+        let message = 'Files saved successfully!';
+
+        if (result.savedPaths && result.savedPaths.length > 0) {
+          message += `\n\nSaved (${result.savedPaths.length}):\n${result.savedPaths.join('\n')}`;
+        }
+
+        if (result.skippedPaths && result.skippedPaths.length > 0) {
+          message += `\n\nSkipped (already saved, ${result.skippedPaths.length}):\n${result.skippedPaths.join('\n')}`;
+        }
+
+        alert(message);
+
+        const updatedOrder = { ...selectedOrder, status: 'saved' as const };
+        setSelectedOrder(updatedOrder);
+
+        setOrders(orders.map(o =>
+          o.id === selectedOrder.id ? updatedOrder : o
+        ));
+
+        if (currentSession) {
+          const completedCount = orders.filter(o => o.status === 'saved').length + 1;
+
+          await supabase
+            .from('processing_sessions')
+            .update({
+              completed_orders: completedCount,
+              status: completedCount === orders.length ? 'completed' : 'in_progress',
+              completed_at: completedCount === orders.length ? new Date().toISOString() : null
+            })
+            .eq('id', currentSession.id);
+        }
+      } else {
+        alert(`Failed to save files:\n${result.error}`);
       }
-
-      if (result.skippedPaths && result.skippedPaths.length > 0) {
-        message += `\n\nSkipped (already saved, ${result.skippedPaths.length}):\n${result.skippedPaths.join('\n')}`;
-      }
-
-      alert(message);
-
-      const updatedOrder = { ...selectedOrder, status: 'saved' as const };
-      setSelectedOrder(updatedOrder);
-
-      setOrders(orders.map(o =>
-        o.id === selectedOrder.id ? updatedOrder : o
-      ));
-
-      if (currentSession) {
-        const completedCount = orders.filter(o => o.status === 'saved').length + 1;
-
-        await supabase
-          .from('processing_sessions')
-          .update({
-            completed_orders: completedCount,
-            status: completedCount === orders.length ? 'completed' : 'in_progress',
-            completed_at: completedCount === orders.length ? new Date().toISOString() : null
-          })
-          .eq('id', currentSession.id);
-      }
-    } else {
-      alert(`Failed to save files:\n${result.error}`);
+    } finally {
+      setIsSaving(false);
+      setSaveProgress('');
     }
   };
 
@@ -708,44 +718,78 @@ function App() {
 
     if (selectedOrderIds.length === 0) return;
 
-    const result = await fileSaverService.saveBatchOrders(orders, selectedOrderIds);
+    setIsSaving(true);
+    setSaveProgress(`Saving 0 of ${selectedOrderIds.length} orders...`);
 
-    let message = 'Batch save completed!';
-    message += `\n\nSaved: ${result.savedCount} files`;
+    try {
+      const ordersToSave = orders.filter(o => selectedOrderIds.includes(o.id));
+      let savedCount = 0;
+      let skippedCount = 0;
+      const errors: string[] = [];
 
-    if (result.skippedCount > 0) {
-      message += `\nSkipped: ${result.skippedCount} files (already saved)`;
-    }
+      for (let i = 0; i < ordersToSave.length; i++) {
+        const order = ordersToSave[i];
+        setSaveProgress(`Saving order ${i + 1} of ${ordersToSave.length}...`);
 
-    if (result.errors.length > 0) {
-      message += `\n\nErrors:\n${result.errors.join('\n')}`;
-    }
+        const result = await fileSaverService.saveOrderFiles(order);
 
-    alert(message);
+        if (result.success) {
+          savedCount += result.savedPaths?.length || 0;
+          skippedCount += result.skippedPaths?.length || 0;
 
-    const updatedOrders = orders.map(order =>
-      selectedOrderIds.includes(order.id)
-        ? { ...order, status: 'saved' as const }
-        : order
-    );
+          await supabase
+            .from('order_items')
+            .update({
+              status: 'saved',
+              saved_at: new Date().toISOString(),
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', order.id);
+        } else {
+          errors.push(`Order ${order.order_number}: ${result.error}`);
+        }
+      }
 
-    setOrders(updatedOrders);
+      let message = 'Batch save completed!';
+      message += `\n\nSaved: ${savedCount} files`;
 
-    if (selectedOrder && selectedOrderIds.includes(selectedOrder.id)) {
-      setSelectedOrder({ ...selectedOrder, status: 'saved' as const });
-    }
+      if (skippedCount > 0) {
+        message += `\nSkipped: ${skippedCount} files (already saved)`;
+      }
 
-    if (currentSession) {
-      const completedCount = updatedOrders.filter(o => o.status === 'saved').length;
+      if (errors.length > 0) {
+        message += `\n\nErrors:\n${errors.join('\n')}`;
+      }
 
-      await supabase
-        .from('processing_sessions')
-        .update({
-          completed_orders: completedCount,
-          status: completedCount === orders.length ? 'completed' : 'in_progress',
-          completed_at: completedCount === orders.length ? new Date().toISOString() : null
-        })
-        .eq('id', currentSession.id);
+      alert(message);
+
+      const updatedOrders = orders.map(order =>
+        selectedOrderIds.includes(order.id)
+          ? { ...order, status: 'saved' as const }
+          : order
+      );
+
+      setOrders(updatedOrders);
+
+      if (selectedOrder && selectedOrderIds.includes(selectedOrder.id)) {
+        setSelectedOrder({ ...selectedOrder, status: 'saved' as const });
+      }
+
+      if (currentSession) {
+        const completedCount = updatedOrders.filter(o => o.status === 'saved').length;
+
+        await supabase
+          .from('processing_sessions')
+          .update({
+            completed_orders: completedCount,
+            status: completedCount === orders.length ? 'completed' : 'in_progress',
+            completed_at: completedCount === orders.length ? new Date().toISOString() : null
+          })
+          .eq('id', currentSession.id);
+      }
+    } finally {
+      setIsSaving(false);
+      setSaveProgress('');
     }
   };
 
@@ -974,6 +1018,18 @@ function App() {
           onClose={() => setPlacementTab(null)}
           onSavePosition={(_, x, y, fontSize, rotation) => handleSavePosition(x, y, fontSize, rotation)}
         />
+      )}
+
+      {isSaving && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-8 max-w-md w-full mx-4 shadow-2xl">
+            <div className="flex flex-col items-center">
+              <div className="animate-spin rounded-full h-16 w-16 border-b-4 border-green-600 mb-4"></div>
+              <h3 className="text-xl font-semibold text-gray-800 mb-2">Saving Files</h3>
+              <p className="text-gray-600 text-center">{saveProgress}</p>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
