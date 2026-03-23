@@ -504,6 +504,7 @@ export interface FolderType {
   description: string | null;
   is_active: boolean;
   sort_order: number;
+  output_file_format: 'pdf' | 'jpg';
   created_at: string;
   updated_at: string;
 }

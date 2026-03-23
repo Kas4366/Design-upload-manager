@@ -135,3 +135,70 @@ export async function convertPDFToImageDataURL(pdfFile: File | Blob): Promise<st
   }
 }
 
+export async function convertPDFToJPG(pdfBytes: Uint8Array): Promise<Uint8Array> {
+  try {
+    const loadingTask = pdfjsLib.getDocument({ data: pdfBytes });
+    const pdfDoc = await loadingTask.promise;
+    const page = await pdfDoc.getPage(1);
+
+    const scale = 300 / 72;
+    const viewport = page.getViewport({ scale });
+
+    const canvas = document.createElement('canvas');
+    const context = canvas.getContext('2d');
+
+    if (!context) {
+      throw new Error('Could not get canvas context');
+    }
+
+    canvas.width = viewport.width;
+    canvas.height = viewport.height;
+
+    const renderContext = {
+      canvasContext: context,
+      viewport: viewport,
+    };
+
+    await page.render(renderContext).promise;
+
+    return new Promise((resolve, reject) => {
+      canvas.toBlob(
+        async (blob) => {
+          if (!blob) {
+            reject(new Error('Failed to convert canvas to blob'));
+            return;
+          }
+          const arrayBuffer = await blob.arrayBuffer();
+          resolve(new Uint8Array(arrayBuffer));
+        },
+        'image/jpeg',
+        0.98
+      );
+    });
+  } catch (error) {
+    console.error('Error converting PDF to JPG:', error);
+    throw new Error(`Failed to convert PDF to JPG: ${error instanceof Error ? error.message : 'Unknown error'}`);
+  }
+}
+
+export async function convertJPGToPDF(jpgBytes: Uint8Array): Promise<Uint8Array> {
+  try {
+    const pdfDoc = await PDFDocument.create();
+    const image = await pdfDoc.embedJpg(jpgBytes);
+    const { width, height } = image.size();
+
+    const page = pdfDoc.addPage([width, height]);
+    page.drawImage(image, {
+      x: 0,
+      y: 0,
+      width: width,
+      height: height,
+    });
+
+    return await pdfDoc.save();
+  } catch (error) {
+    console.error('Error converting JPG to PDF:', error);
+    throw new Error(`Failed to convert JPG to PDF: ${error instanceof Error ? error.message : 'Unknown error'}`);
+  }
+}
+

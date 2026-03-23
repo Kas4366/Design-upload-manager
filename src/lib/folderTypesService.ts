@@ -33,7 +33,8 @@ export const folderTypesService = {
 
   async createFolderType(
     folder_name: string,
-    description?: string | null
+    description?: string | null,
+    output_file_format: 'pdf' | 'jpg' = 'pdf'
   ): Promise<FolderType | null> {
     const maxSortOrder = await this.getMaxSortOrder();
 
@@ -44,6 +45,7 @@ export const folderTypesService = {
         description: description || null,
         is_active: true,
         sort_order: maxSortOrder + 1,
+        output_file_format,
       })
       .select()
       .single();
@@ -63,6 +65,7 @@ export const folderTypesService = {
       description?: string | null;
       is_active?: boolean;
       sort_order?: number;
+      output_file_format?: 'pdf' | 'jpg';
     }
   ): Promise<boolean> {
     const { error } = await supabase

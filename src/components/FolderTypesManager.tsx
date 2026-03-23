@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { X, Plus, Trash2, Edit2, Check, ChevronUp, ChevronDown } from 'lucide-react';
+import { X, Plus, Trash2, CreditCard as Edit2, Check, ChevronUp, ChevronDown } from 'lucide-react';
 import { folderTypesService } from '../lib/folderTypesService';
 import type { FolderType } from '../lib/types';
 
@@ -14,8 +14,10 @@ export function FolderTypesManager({ onClose, onUpdate }: FolderTypesManagerProp
   const [isAdding, setIsAdding] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
   const [newDescription, setNewDescription] = useState('');
+  const [newFileFormat, setNewFileFormat] = useState<'pdf' | 'jpg'>('pdf');
   const [editFolderName, setEditFolderName] = useState('');
   const [editDescription, setEditDescription] = useState('');
+  const [editFileFormat, setEditFileFormat] = useState<'pdf' | 'jpg'>('pdf');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -44,12 +46,14 @@ export function FolderTypesManager({ onClose, onUpdate }: FolderTypesManagerProp
 
     const created = await folderTypesService.createFolderType(
       newFolderName.trim(),
-      newDescription.trim() || null
+      newDescription.trim() || null,
+      newFileFormat
     );
 
     if (created) {
       setNewFolderName('');
       setNewDescription('');
+      setNewFileFormat('pdf');
       setIsAdding(false);
       setError(null);
       await loadFolderTypes();
@@ -75,6 +79,7 @@ export function FolderTypesManager({ onClose, onUpdate }: FolderTypesManagerProp
     const success = await folderTypesService.updateFolderType(id, {
       folder_name: editFolderName.trim(),
       description: editDescription.trim() || null,
+      output_file_format: editFileFormat,
     });
 
     if (success) {
@@ -142,6 +147,7 @@ export function FolderTypesManager({ onClose, onUpdate }: FolderTypesManagerProp
     setEditingId(folderType.id);
     setEditFolderName(folderType.folder_name);
     setEditDescription(folderType.description || '');
+    setEditFileFormat(folderType.output_file_format);
     setError(null);
   };
 
@@ -154,6 +160,7 @@ export function FolderTypesManager({ onClose, onUpdate }: FolderTypesManagerProp
     setIsAdding(false);
     setNewFolderName('');
     setNewDescription('');
+    setNewFileFormat('pdf');
     setError(null);
   };
 
@@ -225,6 +232,19 @@ export function FolderTypesManager({ onClose, onUpdate }: FolderTypesManagerProp
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                     />
                   </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Output Format *
+                    </label>
+                    <select
+                      value={newFileFormat}
+                      onChange={(e) => setNewFileFormat(e.target.value as 'pdf' | 'jpg')}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value="pdf">PDF</option>
+                      <option value="jpg">JPG</option>
+                    </select>
+                  </div>
                   <div className="flex gap-2">
                     <button
                       onClick={handleAdd}
@@ -280,6 +300,19 @@ export function FolderTypesManager({ onClose, onUpdate }: FolderTypesManagerProp
                               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                             />
                           </div>
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">
+                              Output Format *
+                            </label>
+                            <select
+                              value={editFileFormat}
+                              onChange={(e) => setEditFileFormat(e.target.value as 'pdf' | 'jpg')}
+                              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            >
+                              <option value="pdf">PDF</option>
+                              <option value="jpg">JPG</option>
+                            </select>
+                          </div>
                           <div className="flex gap-2">
                             <button
                               onClick={() => handleEdit(folderType.id)}
@@ -316,6 +349,12 @@ export function FolderTypesManager({ onClose, onUpdate }: FolderTypesManagerProp
                             {folderType.description && (
                               <p className="text-sm text-gray-600 mt-1">{folderType.description}</p>
                             )}
+                            <div className="flex items-center gap-2 mt-2">
+                              <span className="text-xs font-medium text-gray-500">Format:</span>
+                              <span className="px-2 py-0.5 text-xs font-semibold rounded bg-blue-100 text-blue-800 uppercase">
+                                {folderType.output_file_format}
+                              </span>
+                            </div>
                           </div>
                           <div className="flex items-center gap-2">
                             <button

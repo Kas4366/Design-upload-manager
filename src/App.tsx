@@ -513,7 +513,7 @@ function App() {
               pdfDataUrl: null,
               orderNumberPlaced: false,
               position: null,
-              selectedFolder: tab.autoSelectedFolder
+              selectedFolder: tab.selectedFolder || tab.autoSelectedFolder
             };
           }
           return tab;
@@ -533,7 +533,7 @@ function App() {
           lineItemId: currentTab.lineItemId,
           isCard: true,
           autoSelectedFolder: currentTab.autoSelectedFolder,
-          selectedFolder: currentTab.autoSelectedFolder,
+          selectedFolder: currentTab.selectedFolder || currentTab.autoSelectedFolder,
           pdfFile: null,
           pdfDataUrl: null,
           orderNumberPlaced: false,
@@ -550,7 +550,7 @@ function App() {
               pdfDataUrl: null,
               orderNumberPlaced: false,
               position: null,
-              selectedFolder: tab.autoSelectedFolder
+              selectedFolder: tab.selectedFolder || tab.autoSelectedFolder
             };
           }
           return tab;
@@ -592,7 +592,7 @@ function App() {
                 pdfDataUrl: null,
                 orderNumberPlaced: false,
                 position: null,
-                selectedFolder: tab.autoSelectedFolder
+                selectedFolder: tab.selectedFolder || tab.autoSelectedFolder
               };
             }
             return tab;

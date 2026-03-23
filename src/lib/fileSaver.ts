@@ -1,6 +1,6 @@
 import { supabase } from './supabase';
 import { SKURoutingRule, OrderWithTabs, SavedFile } from './types';
-import { embedOrderNumberInPDF, embedOrderNumberInJPG } from './pdfProcessor';
+import { embedOrderNumberInPDF, embedOrderNumberInJPG, convertPDFToJPG, convertJPGToPDF } from './pdfProcessor';
 import { folderTypesService } from './folderTypesService';
 import { fileSystemAPI, loadFolderHandle, saveFolderHandle } from './fileSystemAccess';
 import { createZipExport, FileToZip } from './zipExport';
@@ -96,16 +96,18 @@ export class FileSaverService {
       });
   }
 
-  generateFilename(veeqoId: string, tabNumber: number, sku: string, tabLabel: string, isCard: boolean, totalNonInsideTabs: number): string {
+  generateFilename(veeqoId: string, tabNumber: number, sku: string, tabLabel: string, isCard: boolean, totalNonInsideTabs: number, outputFormat: 'pdf' | 'jpg' = 'pdf'): string {
+    const extension = outputFormat === 'jpg' ? 'jpg' : 'pdf';
+
     if (isCard && (tabLabel === 'Front' || tabLabel === 'Inside')) {
-      return `${veeqoId}-${tabLabel}.pdf`;
+      return `${veeqoId}-${tabLabel}.${extension}`;
     }
 
     if (totalNonInsideTabs === 1) {
-      return `${veeqoId}.pdf`;
+      return `${veeqoId}.${extension}`;
     }
 
-    return `${veeqoId}-${tabNumber}.pdf`;
+    return `${veeqoId}-${tabNumber}.${extension}`;
   }
 
   async saveOrderFiles(order: OrderWithTabs, sessionId?: string, csvFilename?: string): Promise<{
@@ -185,36 +187,49 @@ export class FileSaverService {
           };
         }
 
-        let pdfBytes: Uint8Array;
+        let fileBytes: Uint8Array;
+        const outputFormat = folderType.output_file_format;
 
         if (isInsideCard) {
           const { buffer } = await this.readFileAsArrayBuffer(tab.pdfFile);
-          pdfBytes = new Uint8Array(buffer);
+          fileBytes = new Uint8Array(buffer);
+
+          if (outputFormat === 'jpg' && tab.fileType === 'pdf') {
+            fileBytes = await convertPDFToJPG(fileBytes);
+          } else if (outputFormat === 'pdf' && tab.fileType === 'jpg') {
+            fileBytes = await convertJPGToPDF(fileBytes);
+          }
         } else {
           if (tab.fileType === 'jpg') {
-            pdfBytes = await embedOrderNumberInJPG(
+            fileBytes = await embedOrderNumberInJPG(
               tab.pdfFile,
               order.order_number,
               tab.tabNumber,
               tab.position!
             );
           } else {
-            pdfBytes = await embedOrderNumberInPDF(
+            fileBytes = await embedOrderNumberInPDF(
               tab.pdfFile,
               order.order_number,
               tab.tabNumber,
               tab.position!
             );
           }
+
+          if (outputFormat === 'jpg' && tab.fileType === 'pdf') {
+            fileBytes = await convertPDFToJPG(fileBytes);
+          } else if (outputFormat === 'pdf' && tab.fileType === 'jpg') {
+            fileBytes = await convertJPGToPDF(fileBytes);
+          }
         }
 
-        const filename = this.generateFilename(order.veeqo_id, tab.tabNumber, tab.sku, tab.label, tab.isCard, totalNonInsideTabs);
+        const filename = this.generateFilename(order.veeqo_id, tab.tabNumber, tab.sku, tab.label, tab.isCard, totalNonInsideTabs, outputFormat);
 
         const success = await fileSystemAPI.saveFile(
           folderHandle,
           tab.selectedFolder,
           filename,
-          pdfBytes
+          fileBytes
         );
 
         if (!success) {
@@ -266,39 +281,54 @@ export class FileSaverService {
           continue;
         }
 
+        const folderType = await folderTypesService.getFolderTypeByName(tab.selectedFolder);
+        const outputFormat = folderType?.output_file_format || 'pdf';
+
         const isInsideCard = tab.isCard && tab.label === 'Inside';
 
-        let pdfBytes: Uint8Array;
+        let fileBytes: Uint8Array;
 
         if (isInsideCard) {
           const { buffer } = await this.readFileAsArrayBuffer(tab.pdfFile);
-          pdfBytes = new Uint8Array(buffer);
+          fileBytes = new Uint8Array(buffer);
+
+          if (outputFormat === 'jpg' && tab.fileType === 'pdf') {
+            fileBytes = await convertPDFToJPG(fileBytes);
+          } else if (outputFormat === 'pdf' && tab.fileType === 'jpg') {
+            fileBytes = await convertJPGToPDF(fileBytes);
+          }
         } else {
           if (!tab.position) continue;
 
           if (tab.fileType === 'jpg') {
-            pdfBytes = await embedOrderNumberInJPG(
+            fileBytes = await embedOrderNumberInJPG(
               tab.pdfFile,
               order.order_number,
               tab.tabNumber,
               tab.position
             );
           } else {
-            pdfBytes = await embedOrderNumberInPDF(
+            fileBytes = await embedOrderNumberInPDF(
               tab.pdfFile,
               order.order_number,
               tab.tabNumber,
               tab.position
             );
           }
+
+          if (outputFormat === 'jpg' && tab.fileType === 'pdf') {
+            fileBytes = await convertPDFToJPG(fileBytes);
+          } else if (outputFormat === 'pdf' && tab.fileType === 'jpg') {
+            fileBytes = await convertJPGToPDF(fileBytes);
+          }
         }
 
-        const filename = this.generateFilename(order.veeqo_id, tab.tabNumber, tab.sku, tab.label, tab.isCard, totalNonInsideTabs);
+        const filename = this.generateFilename(order.veeqo_id, tab.tabNumber, tab.sku, tab.label, tab.isCard, totalNonInsideTabs, outputFormat);
 
         filesToZip.push({
           folderPath: tab.selectedFolder,
           filename,
-          data: pdfBytes
+          data: fileBytes
         });
       }
 
