@@ -137,6 +137,8 @@ export async function convertPDFToImageDataURL(pdfFile: File | Blob): Promise<st
 
 export async function convertPDFToJPG(pdfBytes: Uint8Array): Promise<Uint8Array> {
   try {
+    pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs';
+
     const loadingTask = pdfjsLib.getDocument({ data: pdfBytes });
     const pdfDoc = await loadingTask.promise;
     const page = await pdfDoc.getPage(1);

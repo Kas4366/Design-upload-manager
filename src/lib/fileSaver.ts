@@ -194,9 +194,10 @@ export class FileSaverService {
           const { buffer } = await this.readFileAsArrayBuffer(tab.pdfFile);
           fileBytes = new Uint8Array(buffer);
 
-          if (outputFormat === 'jpg' && tab.fileType === 'pdf') {
+          const fileIsJpg = tab.fileType === 'jpg';
+          if (outputFormat === 'jpg' && !fileIsJpg) {
             fileBytes = await convertPDFToJPG(fileBytes);
-          } else if (outputFormat === 'pdf' && tab.fileType === 'jpg') {
+          } else if (outputFormat === 'pdf' && fileIsJpg) {
             fileBytes = await convertJPGToPDF(fileBytes);
           }
         } else {
@@ -216,10 +217,8 @@ export class FileSaverService {
             );
           }
 
-          if (outputFormat === 'jpg' && tab.fileType === 'pdf') {
+          if (outputFormat === 'jpg') {
             fileBytes = await convertPDFToJPG(fileBytes);
-          } else if (outputFormat === 'pdf' && tab.fileType === 'jpg') {
-            fileBytes = await convertJPGToPDF(fileBytes);
           }
         }
 
@@ -292,9 +291,10 @@ export class FileSaverService {
           const { buffer } = await this.readFileAsArrayBuffer(tab.pdfFile);
           fileBytes = new Uint8Array(buffer);
 
-          if (outputFormat === 'jpg' && tab.fileType === 'pdf') {
+          const fileIsJpg = tab.fileType === 'jpg';
+          if (outputFormat === 'jpg' && !fileIsJpg) {
             fileBytes = await convertPDFToJPG(fileBytes);
-          } else if (outputFormat === 'pdf' && tab.fileType === 'jpg') {
+          } else if (outputFormat === 'pdf' && fileIsJpg) {
             fileBytes = await convertJPGToPDF(fileBytes);
           }
         } else {
@@ -316,10 +316,8 @@ export class FileSaverService {
             );
           }
 
-          if (outputFormat === 'jpg' && tab.fileType === 'pdf') {
+          if (outputFormat === 'jpg') {
             fileBytes = await convertPDFToJPG(fileBytes);
-          } else if (outputFormat === 'pdf' && tab.fileType === 'jpg') {
-            fileBytes = await convertJPGToPDF(fileBytes);
           }
         }
 

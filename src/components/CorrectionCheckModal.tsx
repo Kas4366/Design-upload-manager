@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { X, ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Maximize, AlertCircle, CheckCircle, Flag } from 'lucide-react';
+import { X, ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Maximize, AlertCircle, CheckCircle, Flag, Filter } from 'lucide-react';
 import { CorrectionCheckFile, OrderWithTabs } from '../lib/types';
 import { supabase } from '../lib/supabase';
 
@@ -18,6 +18,7 @@ export default function CorrectionCheckModal({
   const [zoom, setZoom] = useState(100);
   const [markedForReview, setMarkedForReview] = useState(false);
   const [reviewNotes, setReviewNotes] = useState('');
+  const [selectedFolder, setSelectedFolder] = useState<string | null>(null);
 
   const files = useMemo(() => {
     const allFiles: CorrectionCheckFile[] = [];
@@ -61,13 +62,31 @@ export default function CorrectionCheckModal({
     });
   }, [orders]);
 
+  const folderOptions = useMemo(() => {
+    const counts: Record<string, number> = {};
+    files.forEach(f => {
+      const folder = f.selectedFolder || 'No Folder';
+      counts[folder] = (counts[folder] || 0) + 1;
+    });
+    return Object.entries(counts).sort((a, b) => a[0].localeCompare(b[0]));
+  }, [files]);
+
+  const filteredFiles = useMemo(() => {
+    if (!selectedFolder) return files;
+    return files.filter(f => (f.selectedFolder || 'No Folder') === selectedFolder);
+  }, [files, selectedFolder]);
+
   useEffect(() => {
-    if (files.length > 0) {
-      const currentFile = files[currentIndex];
+    setCurrentIndex(0);
+  }, [selectedFolder]);
+
+  useEffect(() => {
+    if (filteredFiles.length > 0) {
+      const currentFile = filteredFiles[currentIndex];
       setMarkedForReview(currentFile.markedForReview);
       setReviewNotes(currentFile.reviewNotes);
     }
-  }, [currentIndex, files]);
+  }, [currentIndex, filteredFiles]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -90,14 +109,14 @@ export default function CorrectionCheckModal({
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, currentIndex, files.length]);
+  }, [isOpen, currentIndex, filteredFiles.length]);
 
   const handlePrevious = () => {
-    setCurrentIndex((prev) => (prev > 0 ? prev - 1 : files.length - 1));
+    setCurrentIndex((prev) => (prev > 0 ? prev - 1 : filteredFiles.length - 1));
   };
 
   const handleNext = () => {
-    setCurrentIndex((prev) => (prev < files.length - 1 ? prev + 1 : 0));
+    setCurrentIndex((prev) => (prev < filteredFiles.length - 1 ? prev + 1 : 0));
   };
 
   const handleZoomIn = () => {
@@ -113,8 +132,8 @@ export default function CorrectionCheckModal({
   };
 
   const handleToggleReviewFlag = async () => {
-    if (files.length === 0) return;
-    const currentFile = files[currentIndex];
+    if (filteredFiles.length === 0) return;
+    const currentFile = filteredFiles[currentIndex];
     const newMarkedForReview = !markedForReview;
 
     setMarkedForReview(newMarkedForReview);
@@ -129,8 +148,8 @@ export default function CorrectionCheckModal({
   };
 
   const handleSaveNotes = async () => {
-    if (files.length === 0) return;
-    const currentFile = files[currentIndex];
+    if (filteredFiles.length === 0) return;
+    const currentFile = filteredFiles[currentIndex];
 
     await supabase
       .from('order_items')
@@ -143,7 +162,7 @@ export default function CorrectionCheckModal({
 
   if (!isOpen || files.length === 0) return null;
 
-  const currentFile = files[currentIndex];
+  const currentFile = filteredFiles[currentIndex] ?? null;
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-90 flex flex-col z-50">
@@ -153,7 +172,8 @@ export default function CorrectionCheckModal({
           <div>
             <h2 className="text-2xl font-bold">Design Correction Check</h2>
             <p className="text-sm text-gray-400 mt-1">
-              File {currentIndex + 1} of {files.length}
+              {filteredFiles.length > 0 ? `File ${currentIndex + 1} of ${filteredFiles.length}` : 'No files match filter'}
+              {selectedFolder && <span className="ml-2 text-blue-400">— {selectedFolder}</span>}
             </p>
           </div>
           <div className="flex items-center gap-3">
@@ -204,58 +224,112 @@ export default function CorrectionCheckModal({
 
       {/* Main Content - 3 Column Layout */}
       <div className="flex-1 flex overflow-hidden">
-        {/* Left Sidebar - Order Details */}
-        <div className="w-80 bg-gray-800 text-white p-6 overflow-y-auto border-r border-gray-700">
-          <div className="text-lg font-semibold text-gray-300 mb-4">Order Details</div>
-
-          <div className="mb-4">
-            <div className="flex items-center gap-3 mb-2">
-              <div className="text-2xl font-bold">#{currentFile.orderNumber}</div>
-              {currentFile.orderNumberPlaced ? (
-                <CheckCircle className="w-6 h-6 text-green-500" />
-              ) : (
-                <AlertCircle className="w-6 h-6 text-yellow-500" />
-              )}
+        {/* Left Sidebar - Filter + Order Details */}
+        <div className="w-80 bg-gray-800 text-white overflow-y-auto border-r border-gray-700 flex flex-col">
+          {/* Folder Filter */}
+          <div className="p-4 border-b border-gray-700">
+            <div className="flex items-center gap-2 mb-3">
+              <Filter className="w-4 h-4 text-gray-400" />
+              <span className="text-sm font-semibold text-gray-300">Filter by Folder</span>
             </div>
-            <div className="text-sm text-gray-400">Veeqo ID: {currentFile.veeqoId}</div>
+            <div className="space-y-1">
+              <button
+                onClick={() => setSelectedFolder(null)}
+                className={`w-full flex items-center justify-between px-3 py-2 rounded text-sm transition-colors ${
+                  selectedFolder === null
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                }`}
+              >
+                <span>All Folders</span>
+                <span className={`text-xs font-medium px-1.5 py-0.5 rounded-full ${
+                  selectedFolder === null ? 'bg-blue-500' : 'bg-gray-600'
+                }`}>
+                  {files.length}
+                </span>
+              </button>
+              {folderOptions.map(([folder, count]) => (
+                <button
+                  key={folder}
+                  onClick={() => setSelectedFolder(folder)}
+                  className={`w-full flex items-center justify-between px-3 py-2 rounded text-sm transition-colors ${
+                    selectedFolder === folder
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                  }`}
+                >
+                  <span className="truncate text-left">{folder}</span>
+                  <span className={`text-xs font-medium px-1.5 py-0.5 rounded-full ml-2 shrink-0 ${
+                    selectedFolder === folder ? 'bg-blue-500' : 'bg-gray-600'
+                  }`}>
+                    {count}
+                  </span>
+                </button>
+              ))}
+            </div>
           </div>
 
-          <div className="space-y-4">
-            <div>
-              <div className="text-xs text-gray-400 mb-1">Product</div>
-              <div className="text-sm font-medium bg-gray-900 p-3 rounded">
-                {currentFile.productTitle}
-              </div>
-            </div>
+          {/* Order Details */}
+          <div className="p-6 flex-1">
+            {currentFile ? (
+              <>
+                <div className="text-lg font-semibold text-gray-300 mb-4">Order Details</div>
 
-            <div>
-              <div className="text-xs text-gray-400 mb-1">SKU</div>
-              <div className="text-sm font-medium bg-gray-900 p-3 rounded">
-                {currentFile.sku}
-              </div>
-            </div>
-
-            <div>
-              <div className="text-xs text-gray-400 mb-1">Tab</div>
-              <div className="text-sm font-medium bg-gray-900 p-3 rounded">
-                {currentFile.isCard ? currentFile.tabLabel : `Tab ${currentFile.tabNumber}`}
-                {currentFile.totalTabs > 1 && ` of ${currentFile.totalTabs}`}
-              </div>
-            </div>
-
-            <div>
-              <div className="text-xs text-gray-400 mb-1">Destination Folder</div>
-              <div className="text-sm font-medium bg-gray-900 p-3 rounded">
-                {currentFile.selectedFolder || 'Not selected'}
-              </div>
-            </div>
-
-            {currentFile.position && (
-              <div>
-                <div className="text-xs text-gray-400 mb-1">Placement Position</div>
-                <div className="text-sm font-medium bg-gray-900 p-3 rounded">
-                  X: {currentFile.position.x}, Y: {currentFile.position.y}
+                <div className="mb-4">
+                  <div className="flex items-center gap-3 mb-2">
+                    <div className="text-2xl font-bold">#{currentFile.orderNumber}</div>
+                    {currentFile.orderNumberPlaced ? (
+                      <CheckCircle className="w-6 h-6 text-green-500" />
+                    ) : (
+                      <AlertCircle className="w-6 h-6 text-yellow-500" />
+                    )}
+                  </div>
+                  <div className="text-sm text-gray-400">Veeqo ID: {currentFile.veeqoId}</div>
                 </div>
+
+                <div className="space-y-4">
+                  <div>
+                    <div className="text-xs text-gray-400 mb-1">Product</div>
+                    <div className="text-sm font-medium bg-gray-900 p-3 rounded">
+                      {currentFile.productTitle}
+                    </div>
+                  </div>
+
+                  <div>
+                    <div className="text-xs text-gray-400 mb-1">SKU</div>
+                    <div className="text-sm font-medium bg-gray-900 p-3 rounded">
+                      {currentFile.sku}
+                    </div>
+                  </div>
+
+                  <div>
+                    <div className="text-xs text-gray-400 mb-1">Tab</div>
+                    <div className="text-sm font-medium bg-gray-900 p-3 rounded">
+                      {currentFile.isCard ? currentFile.tabLabel : `Tab ${currentFile.tabNumber}`}
+                      {currentFile.totalTabs > 1 && ` of ${currentFile.totalTabs}`}
+                    </div>
+                  </div>
+
+                  <div>
+                    <div className="text-xs text-gray-400 mb-1">Destination Folder</div>
+                    <div className="text-sm font-medium bg-gray-900 p-3 rounded">
+                      {currentFile.selectedFolder || 'Not selected'}
+                    </div>
+                  </div>
+
+                  {currentFile.position && (
+                    <div>
+                      <div className="text-xs text-gray-400 mb-1">Placement Position</div>
+                      <div className="text-sm font-medium bg-gray-900 p-3 rounded">
+                        X: {currentFile.position.x}, Y: {currentFile.position.y}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </>
+            ) : (
+              <div className="flex flex-col items-center justify-center h-48 text-center">
+                <div className="text-gray-500 text-sm">No files match the selected folder filter.</div>
               </div>
             )}
           </div>
@@ -263,102 +337,118 @@ export default function CorrectionCheckModal({
 
         {/* Center - PDF/Image Viewer */}
         <div className="flex-1 flex flex-col items-center justify-center bg-gray-900 relative">
-          <div
-            className="flex-1 flex items-center justify-center overflow-auto w-full"
-            style={{ zoom: `${zoom}%` }}
-          >
-            {currentFile.fileType === 'jpg' ? (
-              <img
-                src={currentFile.pdfDataUrl}
-                alt={`Design Preview - Order ${currentFile.orderNumber}`}
-                className="max-w-[900px] max-h-[1100px] bg-white shadow-2xl"
-              />
-            ) : (
-              <iframe
-                src={currentFile.pdfDataUrl}
-                className="w-[900px] h-[1100px] bg-white shadow-2xl"
-                title={`PDF Preview - Order ${currentFile.orderNumber}`}
-              />
-            )}
-          </div>
+          {currentFile ? (
+            <>
+              <div
+                className="flex-1 flex items-center justify-center overflow-auto w-full"
+                style={{ zoom: `${zoom}%` }}
+              >
+                {currentFile.fileType === 'jpg' ? (
+                  <img
+                    src={currentFile.pdfDataUrl}
+                    alt={`Design Preview - Order ${currentFile.orderNumber}`}
+                    className="max-w-[900px] max-h-[1100px] bg-white shadow-2xl"
+                  />
+                ) : (
+                  <iframe
+                    src={currentFile.pdfDataUrl}
+                    className="w-[900px] h-[1100px] bg-white shadow-2xl"
+                    title={`PDF Preview - Order ${currentFile.orderNumber}`}
+                  />
+                )}
+              </div>
 
-          {/* Navigation Arrows at Bottom */}
-          <div className="flex items-center justify-center gap-8 py-4 bg-gray-800 bg-opacity-90 w-full">
-            <button
-              onClick={handlePrevious}
-              className="p-3 bg-gray-700 hover:bg-gray-600 rounded-full transition-all"
-              title="Previous (←)"
-            >
-              <ChevronLeft className="w-8 h-8" />
-            </button>
-            <span className="text-white text-sm font-medium">
-              Use arrow keys to navigate • ESC to close
-            </span>
-            <button
-              onClick={handleNext}
-              className="p-3 bg-gray-700 hover:bg-gray-600 rounded-full transition-all"
-              title="Next (→)"
-            >
-              <ChevronRight className="w-8 h-8" />
-            </button>
-          </div>
+              {/* Navigation Arrows at Bottom */}
+              <div className="flex items-center justify-center gap-8 py-4 bg-gray-800 bg-opacity-90 w-full">
+                <button
+                  onClick={handlePrevious}
+                  className="p-3 bg-gray-700 hover:bg-gray-600 rounded-full transition-all"
+                  title="Previous (←)"
+                >
+                  <ChevronLeft className="w-8 h-8" />
+                </button>
+                <span className="text-white text-sm font-medium">
+                  Use arrow keys to navigate • ESC to close
+                </span>
+                <button
+                  onClick={handleNext}
+                  className="p-3 bg-gray-700 hover:bg-gray-600 rounded-full transition-all"
+                  title="Next (→)"
+                >
+                  <ChevronRight className="w-8 h-8" />
+                </button>
+              </div>
+            </>
+          ) : (
+            <div className="flex flex-col items-center justify-center gap-4 text-center px-8">
+              <Filter className="w-12 h-12 text-gray-600" />
+              <div className="text-gray-400 text-lg font-medium">No files in this folder</div>
+              <div className="text-gray-500 text-sm">Select a different folder from the left panel or choose "All Folders".</div>
+            </div>
+          )}
         </div>
 
         {/* Right Sidebar - Customization Details */}
         <div className="w-80 bg-gray-800 text-white p-6 overflow-y-auto border-l border-gray-700">
           <div className="text-lg font-semibold text-gray-300 mb-4">Customization Details</div>
 
-          {currentFile.customerNote && (
-            <div className="mb-4">
-              <div className="text-xs text-gray-400 mb-1">Customer Note</div>
-              <div className="text-sm bg-gray-900 p-3 rounded max-h-32 overflow-y-auto">
-                {currentFile.customerNote}
-              </div>
-            </div>
-          )}
+          {currentFile ? (
+            <>
+              {currentFile.customerNote && (
+                <div className="mb-4">
+                  <div className="text-xs text-gray-400 mb-1">Customer Note</div>
+                  <div className="text-sm bg-gray-900 p-3 rounded max-h-32 overflow-y-auto">
+                    {currentFile.customerNote}
+                  </div>
+                </div>
+              )}
 
-          {currentFile.additionalOptions && (
-            <div className="mb-4">
-              <div className="text-xs text-gray-400 mb-1">Additional Options</div>
-              <div className="text-sm bg-gray-900 p-3 rounded max-h-32 overflow-y-auto">
-                {currentFile.additionalOptions}
-              </div>
-            </div>
-          )}
+              {currentFile.additionalOptions && (
+                <div className="mb-4">
+                  <div className="text-xs text-gray-400 mb-1">Additional Options</div>
+                  <div className="text-sm bg-gray-900 p-3 rounded max-h-32 overflow-y-auto">
+                    {currentFile.additionalOptions}
+                  </div>
+                </div>
+              )}
 
-          {currentFile.imageUrls.length > 0 && (
-            <div className="mb-4">
-              <div className="text-xs text-gray-400 mb-2">Customer Images</div>
-              <div className="grid grid-cols-2 gap-2">
-                {currentFile.imageUrls.map((url, idx) => (
-                  <img
-                    key={idx}
-                    src={url}
-                    alt={`Customer upload ${idx + 1}`}
-                    className="w-full h-24 object-cover rounded border border-gray-700 cursor-pointer hover:border-gray-500 transition-colors"
-                    onClick={() => window.open(url, '_blank')}
-                  />
-                ))}
-              </div>
-            </div>
-          )}
+              {currentFile.imageUrls.length > 0 && (
+                <div className="mb-4">
+                  <div className="text-xs text-gray-400 mb-2">Customer Images</div>
+                  <div className="grid grid-cols-2 gap-2">
+                    {currentFile.imageUrls.map((url, idx) => (
+                      <img
+                        key={idx}
+                        src={url}
+                        alt={`Customer upload ${idx + 1}`}
+                        className="w-full h-24 object-cover rounded border border-gray-700 cursor-pointer hover:border-gray-500 transition-colors"
+                        onClick={() => window.open(url, '_blank')}
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
 
-          <div className="mt-6 pt-6 border-t border-gray-700">
-            <div className="text-xs text-gray-400 mb-2">Review Notes</div>
-            <textarea
-              value={reviewNotes}
-              onChange={(e) => setReviewNotes(e.target.value)}
-              placeholder="Add notes about this design..."
-              rows={4}
-              className="w-full px-3 py-2 bg-gray-900 text-white rounded border border-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm resize-none"
-            />
-            <button
-              onClick={handleSaveNotes}
-              className="w-full mt-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded transition-colors text-sm font-medium"
-            >
-              Save Notes
-            </button>
-          </div>
+              <div className="mt-6 pt-6 border-t border-gray-700">
+                <div className="text-xs text-gray-400 mb-2">Review Notes</div>
+                <textarea
+                  value={reviewNotes}
+                  onChange={(e) => setReviewNotes(e.target.value)}
+                  placeholder="Add notes about this design..."
+                  rows={4}
+                  className="w-full px-3 py-2 bg-gray-900 text-white rounded border border-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm resize-none"
+                />
+                <button
+                  onClick={handleSaveNotes}
+                  className="w-full mt-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded transition-colors text-sm font-medium"
+                >
+                  Save Notes
+                </button>
+              </div>
+            </>
+          ) : (
+            <div className="text-gray-500 text-sm">Select a folder to view customization details.</div>
+          )}
         </div>
       </div>
     </div>
