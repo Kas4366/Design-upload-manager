@@ -92,6 +92,7 @@ export function OrderUploadTabs({
   }).length;
 
   const foldersSelectedCount = order.tabs.filter(t => t.selectedFolder).length;
+  const totalNonInsideTabs = order.tabs.filter(t => !(t.isCard && t.label === 'Inside')).length;
 
   // Safety check: if no active tab, show error
   if (!activeTab) {
@@ -265,7 +266,7 @@ export function OrderUploadTabs({
                         <>
                           <div className="flex items-center gap-2 text-green-700 bg-green-50 px-4 py-2 rounded-lg">
                             <CheckCircle className="w-5 h-5" />
-                            <span className="font-medium text-sm">Order number placed ({order.order_number}-{cardPair.front.tabNumber})</span>
+                            <span className="font-medium text-sm">Order number placed ({totalNonInsideTabs > 1 ? `${order.order_number}-${cardPair.front.tabNumber}` : order.order_number})</span>
                           </div>
                           <button
                             onClick={() => onAdjustPosition(cardPair.front.id)}
@@ -445,7 +446,7 @@ export function OrderUploadTabs({
                   <>
                     <div className="flex items-center gap-2 text-green-700 bg-green-50 px-4 py-2 rounded-lg">
                       <CheckCircle className="w-5 h-5" />
-                      <span className="font-medium">Order number placed ({order.order_number}-{activeTab.tabNumber})</span>
+                      <span className="font-medium">Order number placed ({totalNonInsideTabs > 1 ? `${order.order_number}-${activeTab.tabNumber}` : order.order_number})</span>
                     </div>
                     <button
                       onClick={() => onAdjustPosition(activeTabId)}

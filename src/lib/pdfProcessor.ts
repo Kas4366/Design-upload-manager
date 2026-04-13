@@ -30,7 +30,8 @@ export async function embedOrderNumberInJPG(
   jpgFile: File,
   orderNumber: string,
   tabNumber: number,
-  position: { x: number; y: number; fontSize: number; rotation: number }
+  position: { x: number; y: number; fontSize: number; rotation: number },
+  totalTabs: number = 1
 ): Promise<Uint8Array> {
   return new Promise(async (resolve, reject) => {
     try {
@@ -50,7 +51,7 @@ export async function embedOrderNumberInJPG(
 
       const font = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
       const yPosition = height - position.y;
-      const textToEmbed = `${orderNumber}-${tabNumber}`;
+      const textToEmbed = totalTabs > 1 ? `${orderNumber}-${tabNumber}` : orderNumber;
 
       page.drawText(textToEmbed, {
         x: position.x,
@@ -73,7 +74,8 @@ export async function embedOrderNumberInPDF(
   pdfFile: File,
   orderNumber: string,
   tabNumber: number,
-  position: { x: number; y: number; fontSize: number; rotation: number }
+  position: { x: number; y: number; fontSize: number; rotation: number },
+  totalTabs: number = 1
 ): Promise<Uint8Array> {
   const arrayBuffer = await pdfFile.arrayBuffer();
   const pdfDoc = await PDFDocument.load(arrayBuffer);
@@ -85,7 +87,7 @@ export async function embedOrderNumberInPDF(
   const { width, height } = firstPage.getSize();
   const yPosition = height - position.y;
 
-  const textToEmbed = `${orderNumber}-${tabNumber}`;
+  const textToEmbed = totalTabs > 1 ? `${orderNumber}-${tabNumber}` : orderNumber;
 
   firstPage.drawText(textToEmbed, {
     x: position.x,

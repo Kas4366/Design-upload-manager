@@ -206,14 +206,16 @@ export class FileSaverService {
               tab.pdfFile,
               order.order_number,
               tab.tabNumber,
-              tab.position!
+              tab.position!,
+              totalNonInsideTabs
             );
           } else {
             fileBytes = await embedOrderNumberInPDF(
               tab.pdfFile,
               order.order_number,
               tab.tabNumber,
-              tab.position!
+              tab.position!,
+              totalNonInsideTabs
             );
           }
 
@@ -305,14 +307,16 @@ export class FileSaverService {
               tab.pdfFile,
               order.order_number,
               tab.tabNumber,
-              tab.position
+              tab.position,
+              totalNonInsideTabs
             );
           } else {
             fileBytes = await embedOrderNumberInPDF(
               tab.pdfFile,
               order.order_number,
               tab.tabNumber,
-              tab.position
+              tab.position,
+              totalNonInsideTabs
             );
           }
 
