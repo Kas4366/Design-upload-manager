@@ -24,14 +24,24 @@ export function FilePreview({ file, objectUrl, alt = 'Preview', className = '' }
     try {
       pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs';
 
-      const base64Data = objectUrl.split(',')[1];
-      const binaryString = atob(base64Data);
-      const bytes = new Uint8Array(binaryString.length);
-      for (let i = 0; i < binaryString.length; i++) {
-        bytes[i] = binaryString.charCodeAt(i);
+      let pdfData: Uint8Array;
+
+      if (objectUrl.startsWith('blob:')) {
+        // Blob URL — fetch the raw bytes
+        const response = await fetch(objectUrl);
+        const arrayBuffer = await response.arrayBuffer();
+        pdfData = new Uint8Array(arrayBuffer);
+      } else {
+        // Data URL — extract base64 payload
+        const base64Data = objectUrl.split(',')[1];
+        const binaryString = atob(base64Data);
+        pdfData = new Uint8Array(binaryString.length);
+        for (let i = 0; i < binaryString.length; i++) {
+          pdfData[i] = binaryString.charCodeAt(i);
+        }
       }
 
-      const loadingTask = pdfjsLib.getDocument({ data: bytes });
+      const loadingTask = pdfjsLib.getDocument({ data: pdfData });
       const pdf = await loadingTask.promise;
       const page = await pdf.getPage(1);
       const viewport = page.getViewport({ scale: 2.0 });
@@ -45,6 +55,9 @@ export function FilePreview({ file, objectUrl, alt = 'Preview', className = '' }
 
       canvas.width = viewport.width;
       canvas.height = viewport.height;
+
+      context.fillStyle = '#FFFFFF';
+      context.fillRect(0, 0, canvas.width, canvas.height);
 
       await page.render({
         canvasContext: context,
@@ -79,7 +92,11 @@ export function FilePreview({ file, objectUrl, alt = 'Preview', className = '' }
       );
     }
 
-    return null;
+    return (
+      <div className={`flex items-center justify-center bg-gray-100 min-h-[200px] ${className}`}>
+        <div className="text-gray-400 text-sm">Preview unavailable</div>
+      </div>
+    );
   }
 
   return (

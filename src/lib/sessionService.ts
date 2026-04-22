@@ -5,6 +5,15 @@ import { productTypePositionService } from './productTypePositionService';
 import { calculateTabsForOrder, createEmptyTabs, isCardSKU } from './csvParser';
 import { folderSelectionService } from './folderSelectionService';
 
+function blobToDataUrl(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+}
+
 export interface SessionInfo {
   id: string;
   csvFilename: string;
@@ -448,7 +457,7 @@ export async function loadSessionData(sessionId: string): Promise<OrderWithTabs[
           const blob = await fetchFileAsBlob(uploadedFile.storageUrl);
           if (blob) {
             pdfFile = new File([blob], uploadedFile.originalFilename, { type: blob.type });
-            pdfDataUrl = URL.createObjectURL(blob);
+            pdfDataUrl = await blobToDataUrl(blob);
             fileType = uploadedFile.fileType === 'pdf' ? 'pdf' : 'jpg';
           }
         }
@@ -482,6 +491,16 @@ export async function loadSessionData(sessionId: string): Promise<OrderWithTabs[
           }
         }
 
+          // Derive pairIndex for card tabs that pre-date the pair_index column
+          let resolvedPairIndex: number | null = tabMeta.pair_index ?? null;
+          if (resolvedPairIndex === null && tabMeta.is_card) {
+            // Count how many card tabs with same lineItemId/lineIndex have been pushed so far
+            const sameGroupCardsSoFar = tabs.filter(
+              t => t.isCard && t.lineItemId === tabMeta.line_item_id && t.lineIndex === tabMeta.line_index
+            ).length;
+            resolvedPairIndex = Math.floor(sameGroupCardsSoFar / 2) + 1;
+          }
+
           tabs.push({
             id: tabMeta.tab_id,
             label: tabMeta.label || `Tab ${tabMeta.tab_number || 0}`,
@@ -490,6 +509,7 @@ export async function loadSessionData(sessionId: string): Promise<OrderWithTabs[
             lineIndex: tabMeta.line_index || 0,
             lineItemId: tabMeta.line_item_id || null,
             isCard: tabMeta.is_card || false,
+            pairIndex: resolvedPairIndex,
             autoSelectedFolder: tabMeta.auto_selected_folder || null,
             selectedFolder: tabMeta.selected_folder || null,
             pdfFile,
@@ -516,7 +536,7 @@ export async function loadSessionData(sessionId: string): Promise<OrderWithTabs[
             const blob = await fetchFileAsBlob(uploadedFile.storageUrl);
             if (blob) {
               tab.pdfFile = new File([blob], uploadedFile.originalFilename, { type: blob.type });
-              tab.pdfDataUrl = URL.createObjectURL(blob);
+              tab.pdfDataUrl = await blobToDataUrl(blob);
               tab.fileType = uploadedFile.fileType === 'pdf' ? 'pdf' : 'jpg';
               tab.isAutoLoaded = true;
             }

@@ -285,6 +285,7 @@ function App() {
           line_index: tab.lineIndex,
           is_card: tab.isCard,
           label: tab.label,
+          pair_index: tab.pairIndex ?? null,
           auto_selected_folder: tab.autoSelectedFolder,
           selected_folder: tab.selectedFolder
         });
@@ -484,28 +485,28 @@ function App() {
     const currentTab = selectedOrder.tabs.find(t => t.id === tabId);
     if (!currentTab) return;
 
-    // Find the paired tab (same lineIndex, same lineItemId)
-    const pairedTab = selectedOrder.tabs.find(t =>
-      t.id !== tabId &&
+    // Find all tabs in the same line item group
+    const lineGroupTabs = selectedOrder.tabs.filter(t =>
       t.lineIndex === currentTab.lineIndex &&
       t.lineItemId === currentTab.lineItemId
     );
 
     if (isCard) {
-      // Toggling ON - check if current tab has file
-      if (currentTab.pdfFile) {
+      const hasAnyFiles = lineGroupTabs.some(t => t.pdfFile);
+      if (hasAnyFiles) {
         const confirmed = confirm(
-          'Switching to Card Design will clear the uploaded file and create Front/Inside tabs. Continue?'
+          'Switching to Card Design will clear all uploaded files and create Front/Inside tabs. Continue?'
         );
         if (!confirmed) return;
       }
 
-      let updatedTabs: UploadTab[];
+      // Check if already card pairs exist in this group
+      const existingCardTabs = lineGroupTabs.filter(t => t.isCard);
 
-      if (pairedTab) {
-        // Paired tab exists, just update both to isCard=true and clear files
-        updatedTabs = selectedOrder.tabs.map(tab => {
-          if (tab.id === tabId || tab.id === pairedTab.id) {
+      if (existingCardTabs.length > 0) {
+        // Already have card tabs — just ensure isCard=true and clear files
+        const updatedTabs = selectedOrder.tabs.map(tab => {
+          if (tab.lineIndex === currentTab.lineIndex && tab.lineItemId === currentTab.lineItemId) {
             return {
               ...tab,
               isCard: true,
@@ -518,56 +519,84 @@ function App() {
           }
           return tab;
         });
-      } else {
-        // No paired tab - create Front and Inside tabs
-        const baseTabNumber = currentTab.tabNumber;
 
-        // Update the current tab to be "Front"
-        // Create new "Inside" tab
-        const insideTab: UploadTab = {
-          id: `${currentTab.id}-inside`,
-          label: 'Inside',
-          tabNumber: baseTabNumber,
+        const updatedOrder = { ...selectedOrder, tabs: updatedTabs };
+        setSelectedOrder(updatedOrder);
+        setOrders(orders.map(o => o.id === selectedOrder.id ? updatedOrder : o));
+        return;
+      }
+
+      // No card pairs yet — determine quantity from the number of tabs in this line group
+      // Each non-card tab represents one unit; we create Front+Inside pairs for each
+      const qty = lineGroupTabs.length;
+      const baseTabNumber = lineGroupTabs[0].tabNumber;
+
+      // Build the new card tabs replacing the line group
+      const newCardTabs: UploadTab[] = [];
+      for (let i = 0; i < qty; i++) {
+        const pairIndex = i + 1;
+        const frontTabNumber = baseTabNumber + i * 2;
+        const insideTabNumber = frontTabNumber + 1;
+        const sourceTab = lineGroupTabs[i] || lineGroupTabs[0];
+
+        newCardTabs.push({
+          id: `${sourceTab.id}-front`,
+          label: 'Front',
+          tabNumber: frontTabNumber,
           sku: currentTab.sku,
           lineIndex: currentTab.lineIndex,
           lineItemId: currentTab.lineItemId,
           isCard: true,
+          pairIndex,
           autoSelectedFolder: currentTab.autoSelectedFolder,
           selectedFolder: currentTab.selectedFolder || currentTab.autoSelectedFolder,
           pdfFile: null,
           pdfDataUrl: null,
+          fileType: null,
+          fileWidth: null,
+          fileHeight: null,
+          isAutoLoaded: false,
           orderNumberPlaced: false,
           position: null
-        };
-
-        updatedTabs = selectedOrder.tabs.map(tab => {
-          if (tab.id === tabId) {
-            return {
-              ...tab,
-              label: 'Front',
-              isCard: true,
-              pdfFile: null,
-              pdfDataUrl: null,
-              orderNumberPlaced: false,
-              position: null,
-              selectedFolder: tab.selectedFolder || tab.autoSelectedFolder
-            };
-          }
-          return tab;
         });
-
-        // Insert the inside tab right after the front tab
-        const currentIndex = updatedTabs.findIndex(t => t.id === tabId);
-        updatedTabs.splice(currentIndex + 1, 0, insideTab);
+        newCardTabs.push({
+          id: `${sourceTab.id}-inside`,
+          label: 'Inside',
+          tabNumber: insideTabNumber,
+          sku: currentTab.sku,
+          lineIndex: currentTab.lineIndex,
+          lineItemId: currentTab.lineItemId,
+          isCard: true,
+          pairIndex,
+          autoSelectedFolder: currentTab.autoSelectedFolder,
+          selectedFolder: currentTab.selectedFolder || currentTab.autoSelectedFolder,
+          pdfFile: null,
+          pdfDataUrl: null,
+          fileType: null,
+          fileWidth: null,
+          fileHeight: null,
+          isAutoLoaded: false,
+          orderNumberPlaced: false,
+          position: null
+        });
       }
+
+      // Replace the line group tabs with new card tabs
+      const lineGroupIds = new Set(lineGroupTabs.map(t => t.id));
+      const firstLineGroupIndex = selectedOrder.tabs.findIndex(t => lineGroupIds.has(t.id));
+      const updatedTabs = [
+        ...selectedOrder.tabs.slice(0, firstLineGroupIndex).filter(t => !lineGroupIds.has(t.id)),
+        ...newCardTabs,
+        ...selectedOrder.tabs.slice(firstLineGroupIndex).filter(t => !lineGroupIds.has(t.id))
+      ];
 
       const updatedOrder = { ...selectedOrder, tabs: updatedTabs };
       setSelectedOrder(updatedOrder);
       setOrders(orders.map(o => o.id === selectedOrder.id ? updatedOrder : o));
 
     } else {
-      // Toggling OFF - check if any card tabs have files
-      const hasFiles = currentTab.pdfFile || (pairedTab && pairedTab.pdfFile);
+      // Toggling OFF — remove all card tabs in this line group, replace with single regular tab
+      const hasFiles = lineGroupTabs.some(t => t.pdfFile);
 
       if (hasFiles) {
         const confirmed = confirm(
@@ -576,44 +605,39 @@ function App() {
         if (!confirmed) return;
       }
 
-      let updatedTabs: UploadTab[];
+      const lineGroupIds = new Set(lineGroupTabs.map(t => t.id));
+      const firstLineGroupIndex = selectedOrder.tabs.findIndex(t => lineGroupIds.has(t.id));
 
-      if (pairedTab) {
-        // Remove the paired tab and convert current to regular tab
-        updatedTabs = selectedOrder.tabs
-          .filter(tab => tab.id !== pairedTab.id)
-          .map(tab => {
-            if (tab.id === tabId) {
-              return {
-                ...tab,
-                label: `${tab.tabNumber}`,
-                isCard: false,
-                pdfFile: null,
-                pdfDataUrl: null,
-                orderNumberPlaced: false,
-                position: null,
-                selectedFolder: tab.selectedFolder || tab.autoSelectedFolder
-              };
-            }
-            return tab;
-          });
-      } else {
-        // No paired tab, just toggle isCard flag and clear files
-        updatedTabs = selectedOrder.tabs.map(tab => {
-          if (tab.id === tabId) {
-            return {
-              ...tab,
-              isCard: false,
-              pdfFile: null,
-              pdfDataUrl: null,
-              orderNumberPlaced: false,
-              position: null,
-              selectedFolder: tab.autoSelectedFolder
-            };
-          }
-          return tab;
-        });
-      }
+      // Create one regular tab per pair (qty = pairs count)
+      const pairCount = Math.max(1, Math.ceil(lineGroupTabs.length / 2));
+      const baseTabNumber = lineGroupTabs[0].tabNumber;
+
+      const regularTabs: UploadTab[] = Array.from({ length: pairCount }, (_, i) => ({
+        id: `${currentTab.id}-regular-${i}`,
+        label: `${baseTabNumber + i}`,
+        tabNumber: baseTabNumber + i,
+        sku: currentTab.sku,
+        lineIndex: currentTab.lineIndex,
+        lineItemId: currentTab.lineItemId,
+        isCard: false,
+        pairIndex: null,
+        autoSelectedFolder: currentTab.autoSelectedFolder,
+        selectedFolder: currentTab.selectedFolder || currentTab.autoSelectedFolder,
+        pdfFile: null,
+        pdfDataUrl: null,
+        fileType: null,
+        fileWidth: null,
+        fileHeight: null,
+        isAutoLoaded: false,
+        orderNumberPlaced: false,
+        position: null
+      }));
+
+      const updatedTabs = [
+        ...selectedOrder.tabs.slice(0, firstLineGroupIndex).filter(t => !lineGroupIds.has(t.id)),
+        ...regularTabs,
+        ...selectedOrder.tabs.slice(firstLineGroupIndex).filter(t => !lineGroupIds.has(t.id))
+      ];
 
       const updatedOrder = { ...selectedOrder, tabs: updatedTabs };
       setSelectedOrder(updatedOrder);

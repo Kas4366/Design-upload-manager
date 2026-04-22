@@ -65,7 +65,7 @@ export function calculateTabsForOrder(sku: string, title: string, quantity: numb
   const titleLower = title.toLowerCase();
 
   if (skuUpper.includes('CD') || titleLower.includes('card')) {
-    return 2;
+    return quantity * 2;
   }
 
   if (numberOfLines === 0) {
@@ -79,8 +79,13 @@ export function generateTabLabels(sku: string, title: string, tabCount: number, 
   const skuUpper = sku.toUpperCase();
   const titleLower = title.toLowerCase();
 
-  if ((skuUpper.includes('CD') || titleLower.includes('card') || isCard) && tabCount === 2) {
-    return ['Front', 'Inside'];
+  if (skuUpper.includes('CD') || titleLower.includes('card') || isCard) {
+    const pairCount = tabCount / 2;
+    const labels: string[] = [];
+    for (let i = 0; i < pairCount; i++) {
+      labels.push('Front', 'Inside');
+    }
+    return labels;
   }
 
   return Array.from({ length: tabCount }, (_, i) => `${i + 1}`);
@@ -98,23 +103,27 @@ export function createEmptyTabs(
 ): UploadTab[] {
   const labels = generateTabLabels(sku, title, tabCount, isCard);
 
-  return labels.map((label, index) => ({
-    id: `tab-${startingTabNumber + index}`,
-    label,
-    tabNumber: startingTabNumber + index,
-    sku,
-    lineIndex,
-    lineItemId,
-    isCard,
-    autoSelectedFolder,
-    selectedFolder: autoSelectedFolder,
-    pdfFile: null,
-    pdfDataUrl: null,
-    fileType: null,
-    isAutoLoaded: false,
-    orderNumberPlaced: false,
-    position: null
-  }));
+  return labels.map((label, index) => {
+    const pairIndex = isCard ? Math.floor(index / 2) + 1 : null;
+    return {
+      id: `tab-${startingTabNumber + index}`,
+      label,
+      tabNumber: startingTabNumber + index,
+      sku,
+      lineIndex,
+      lineItemId,
+      isCard,
+      pairIndex,
+      autoSelectedFolder,
+      selectedFolder: autoSelectedFolder,
+      pdfFile: null,
+      pdfDataUrl: null,
+      fileType: null,
+      isAutoLoaded: false,
+      orderNumberPlaced: false,
+      position: null
+    };
+  });
 }
 
 export function convertCSVRowsToOrderItems(
@@ -217,7 +226,8 @@ export function findCardPair(tabs: UploadTab[], tabId: string): { front: UploadT
     t.id !== tabId &&
     t.lineIndex === currentTab.lineIndex &&
     t.lineItemId === currentTab.lineItemId &&
-    t.isCard
+    t.isCard &&
+    t.pairIndex === currentTab.pairIndex
   );
 
   if (!pairedTab) return null;

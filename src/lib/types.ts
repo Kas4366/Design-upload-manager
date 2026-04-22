@@ -462,6 +462,7 @@ export interface UploadTab {
   lineIndex: number;
   lineItemId: string | null;
   isCard: boolean;
+  pairIndex: number | null;
   autoSelectedFolder: string | null;
   selectedFolder: string | null;
   pdfFile: File | null;

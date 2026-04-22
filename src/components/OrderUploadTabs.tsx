@@ -183,6 +183,14 @@ export function OrderUploadTabs({
               const isActive = activeTabId === tab.id || (pair && activeTabId === pair.inside.id);
               const hasFiles = pair ? (pair.front.pdfFile && pair.inside.pdfFile) : tab.pdfFile;
 
+              // Determine tab label: for cards show "Copy N" when multiple pairs exist
+              const totalCardPairs = tab.isCard
+                ? order.tabs.filter(t => t.isCard && t.label === 'Front' && t.lineItemId === tab.lineItemId && t.lineIndex === tab.lineIndex).length
+                : 0;
+              const tabLabel = tab.isCard
+                ? (totalCardPairs > 1 ? `Copy ${tab.pairIndex}` : 'Card')
+                : `Tab ${tab.tabNumber}`;
+
               return (
                 <button
                   key={tab.id}
@@ -194,7 +202,7 @@ export function OrderUploadTabs({
                   }`}
                 >
                   <div className="flex items-center gap-2">
-                    <span>Tab {tab.tabNumber}{pair ? ' (Card)' : ''}</span>
+                    <span>{tabLabel}</span>
                     {hasFiles && <CheckCircle className="w-4 h-4" />}
                   </div>
                   <span className={`text-xs ${isActive ? 'text-blue-100' : 'text-gray-500'}`}>
