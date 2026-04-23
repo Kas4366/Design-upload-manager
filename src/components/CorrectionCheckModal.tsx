@@ -1,5 +1,6 @@
-import { useState, useEffect, useMemo } from 'react';
-import { X, ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Maximize, AlertCircle, CheckCircle, Flag, Filter } from 'lucide-react';
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { X, ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Maximize, AlertCircle, CheckCircle, Flag, Filter, Loader } from 'lucide-react';
+import * as pdfjsLib from 'pdfjs-dist';
 import { CorrectionCheckFile, OrderWithTabs } from '../lib/types';
 import { supabase } from '../lib/supabase';
 
@@ -7,6 +8,99 @@ interface CorrectionCheckModalProps {
   isOpen: boolean;
   onClose: () => void;
   orders: OrderWithTabs[];
+}
+
+interface PDFCanvasViewerProps {
+  pdfFile: File;
+  zoom: number;
+}
+
+function PDFCanvasViewer({ pdfFile, zoom }: PDFCanvasViewerProps) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [hasError, setHasError] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const render = async () => {
+      setIsLoading(true);
+      setHasError(false);
+
+      try {
+        pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs';
+
+        const arrayBuffer = await pdfFile.arrayBuffer();
+        if (cancelled) return;
+
+        const loadingTask = pdfjsLib.getDocument({ data: new Uint8Array(arrayBuffer) });
+        const pdf = await loadingTask.promise;
+        if (cancelled) return;
+
+        const page = await pdf.getPage(1);
+        if (cancelled) return;
+
+        const baseScale = 2.0;
+        const viewport = page.getViewport({ scale: baseScale });
+
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+
+        const context = canvas.getContext('2d');
+        if (!context) throw new Error('No canvas context');
+
+        canvas.width = viewport.width;
+        canvas.height = viewport.height;
+
+        context.fillStyle = '#FFFFFF';
+        context.fillRect(0, 0, canvas.width, canvas.height);
+
+        await page.render({ canvasContext: context, viewport }).promise;
+        if (cancelled) return;
+
+        setIsLoading(false);
+      } catch (err) {
+        if (cancelled) return;
+        console.error('PDF canvas render error:', err);
+        setHasError(true);
+        setIsLoading(false);
+      }
+    };
+
+    render();
+    return () => { cancelled = true; };
+  }, [pdfFile]);
+
+  if (isLoading) {
+    return (
+      <div className="flex flex-col items-center justify-center bg-white shadow-2xl" style={{ width: 900, height: 600 }}>
+        <Loader className="w-8 h-8 text-gray-400 animate-spin mb-3" />
+        <span className="text-sm text-gray-500">Loading preview...</span>
+      </div>
+    );
+  }
+
+  if (hasError) {
+    return (
+      <div className="flex flex-col items-center justify-center bg-white shadow-2xl" style={{ width: 900, height: 600 }}>
+        <AlertCircle className="w-10 h-10 text-red-400 mb-3" />
+        <span className="text-sm text-gray-600 font-medium">Preview unavailable</span>
+        <span className="text-xs text-gray-400 mt-1">The file may be corrupted or unsupported</span>
+      </div>
+    );
+  }
+
+  return (
+    <canvas
+      ref={canvasRef}
+      className="bg-white shadow-2xl"
+      style={{
+        maxWidth: `${900 * (zoom / 100)}px`,
+        height: 'auto',
+        display: 'block'
+      }}
+    />
+  );
 }
 
 export default function CorrectionCheckModal({
@@ -88,10 +182,17 @@ export default function CorrectionCheckModal({
     }
   }, [currentIndex, filteredFiles]);
 
+  const handlePrevious = useCallback(() => {
+    setCurrentIndex((prev) => (prev > 0 ? prev - 1 : filteredFiles.length - 1));
+  }, [filteredFiles.length]);
+
+  const handleNext = useCallback(() => {
+    setCurrentIndex((prev) => (prev < filteredFiles.length - 1 ? prev + 1 : 0));
+  }, [filteredFiles.length]);
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (!isOpen) return;
-
       switch (e.key) {
         case 'ArrowLeft':
         case 'PageUp':
@@ -109,54 +210,29 @@ export default function CorrectionCheckModal({
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, currentIndex, filteredFiles.length]);
+  }, [isOpen, handlePrevious, handleNext, onClose]);
 
-  const handlePrevious = () => {
-    setCurrentIndex((prev) => (prev > 0 ? prev - 1 : filteredFiles.length - 1));
-  };
-
-  const handleNext = () => {
-    setCurrentIndex((prev) => (prev < filteredFiles.length - 1 ? prev + 1 : 0));
-  };
-
-  const handleZoomIn = () => {
-    setZoom((prev) => Math.min(prev + 25, 200));
-  };
-
-  const handleZoomOut = () => {
-    setZoom((prev) => Math.max(prev - 25, 50));
-  };
-
-  const handleFitScreen = () => {
-    setZoom(100);
-  };
+  const handleZoomIn = () => setZoom((prev) => Math.min(prev + 25, 200));
+  const handleZoomOut = () => setZoom((prev) => Math.max(prev - 25, 50));
+  const handleFitScreen = () => setZoom(100);
 
   const handleToggleReviewFlag = async () => {
     if (filteredFiles.length === 0) return;
     const currentFile = filteredFiles[currentIndex];
     const newMarkedForReview = !markedForReview;
-
     setMarkedForReview(newMarkedForReview);
-
     await supabase
       .from('order_items')
-      .update({
-        marked_for_review: newMarkedForReview,
-        updated_at: new Date().toISOString()
-      })
+      .update({ marked_for_review: newMarkedForReview, updated_at: new Date().toISOString() })
       .eq('id', currentFile.orderItemId);
   };
 
   const handleSaveNotes = async () => {
     if (filteredFiles.length === 0) return;
     const currentFile = filteredFiles[currentIndex];
-
     await supabase
       .from('order_items')
-      .update({
-        review_notes: reviewNotes,
-        updated_at: new Date().toISOString()
-      })
+      .update({ review_notes: reviewNotes, updated_at: new Date().toISOString() })
       .eq('id', currentFile.orderItemId);
   };
 
@@ -177,45 +253,26 @@ export default function CorrectionCheckModal({
             </p>
           </div>
           <div className="flex items-center gap-3">
-            <button
-              onClick={handleZoomOut}
-              className="p-2 hover:bg-gray-800 rounded transition-colors"
-              title="Zoom Out"
-            >
+            <button onClick={handleZoomOut} className="p-2 hover:bg-gray-800 rounded transition-colors" title="Zoom Out">
               <ZoomOut className="w-5 h-5" />
             </button>
-            <span className="text-sm font-medium min-w-[60px] text-center">
-              {zoom}%
-            </span>
-            <button
-              onClick={handleZoomIn}
-              className="p-2 hover:bg-gray-800 rounded transition-colors"
-              title="Zoom In"
-            >
+            <span className="text-sm font-medium min-w-[60px] text-center">{zoom}%</span>
+            <button onClick={handleZoomIn} className="p-2 hover:bg-gray-800 rounded transition-colors" title="Zoom In">
               <ZoomIn className="w-5 h-5" />
             </button>
-            <button
-              onClick={handleFitScreen}
-              className="p-2 hover:bg-gray-800 rounded transition-colors"
-              title="Fit to Screen"
-            >
+            <button onClick={handleFitScreen} className="p-2 hover:bg-gray-800 rounded transition-colors" title="Fit to Screen">
               <Maximize className="w-5 h-5" />
             </button>
             <button
               onClick={handleToggleReviewFlag}
               className={`flex items-center gap-2 px-4 py-2 rounded transition-colors ${
-                markedForReview
-                  ? 'bg-red-600 hover:bg-red-700'
-                  : 'bg-gray-700 hover:bg-gray-600'
+                markedForReview ? 'bg-red-600 hover:bg-red-700' : 'bg-gray-700 hover:bg-gray-600'
               }`}
             >
               <Flag className="w-5 h-5" />
               {markedForReview ? 'Flagged' : 'Flag for Review'}
             </button>
-            <button
-              onClick={onClose}
-              className="p-2 hover:bg-gray-800 rounded transition-colors"
-            >
+            <button onClick={onClose} className="p-2 hover:bg-gray-800 rounded transition-colors">
               <X className="w-6 h-6" />
             </button>
           </div>
@@ -236,15 +293,11 @@ export default function CorrectionCheckModal({
               <button
                 onClick={() => setSelectedFolder(null)}
                 className={`w-full flex items-center justify-between px-3 py-2 rounded text-sm transition-colors ${
-                  selectedFolder === null
-                    ? 'bg-blue-600 text-white'
-                    : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                  selectedFolder === null ? 'bg-blue-600 text-white' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
                 }`}
               >
                 <span>All Folders</span>
-                <span className={`text-xs font-medium px-1.5 py-0.5 rounded-full ${
-                  selectedFolder === null ? 'bg-blue-500' : 'bg-gray-600'
-                }`}>
+                <span className={`text-xs font-medium px-1.5 py-0.5 rounded-full ${selectedFolder === null ? 'bg-blue-500' : 'bg-gray-600'}`}>
                   {files.length}
                 </span>
               </button>
@@ -253,15 +306,11 @@ export default function CorrectionCheckModal({
                   key={folder}
                   onClick={() => setSelectedFolder(folder)}
                   className={`w-full flex items-center justify-between px-3 py-2 rounded text-sm transition-colors ${
-                    selectedFolder === folder
-                      ? 'bg-blue-600 text-white'
-                      : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                    selectedFolder === folder ? 'bg-blue-600 text-white' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
                   }`}
                 >
                   <span className="truncate text-left">{folder}</span>
-                  <span className={`text-xs font-medium px-1.5 py-0.5 rounded-full ml-2 shrink-0 ${
-                    selectedFolder === folder ? 'bg-blue-500' : 'bg-gray-600'
-                  }`}>
+                  <span className={`text-xs font-medium px-1.5 py-0.5 rounded-full ml-2 shrink-0 ${selectedFolder === folder ? 'bg-blue-500' : 'bg-gray-600'}`}>
                     {count}
                   </span>
                 </button>
@@ -274,7 +323,6 @@ export default function CorrectionCheckModal({
             {currentFile ? (
               <>
                 <div className="text-lg font-semibold text-gray-300 mb-4">Order Details</div>
-
                 <div className="mb-4">
                   <div className="flex items-center gap-3 mb-2">
                     <div className="text-2xl font-bold">#{currentFile.orderNumber}</div>
@@ -290,18 +338,12 @@ export default function CorrectionCheckModal({
                 <div className="space-y-4">
                   <div>
                     <div className="text-xs text-gray-400 mb-1">Product</div>
-                    <div className="text-sm font-medium bg-gray-900 p-3 rounded">
-                      {currentFile.productTitle}
-                    </div>
+                    <div className="text-sm font-medium bg-gray-900 p-3 rounded">{currentFile.productTitle}</div>
                   </div>
-
                   <div>
                     <div className="text-xs text-gray-400 mb-1">SKU</div>
-                    <div className="text-sm font-medium bg-gray-900 p-3 rounded">
-                      {currentFile.sku}
-                    </div>
+                    <div className="text-sm font-medium bg-gray-900 p-3 rounded">{currentFile.sku}</div>
                   </div>
-
                   <div>
                     <div className="text-xs text-gray-400 mb-1">Tab</div>
                     <div className="text-sm font-medium bg-gray-900 p-3 rounded">
@@ -309,14 +351,12 @@ export default function CorrectionCheckModal({
                       {currentFile.totalTabs > 1 && ` of ${currentFile.totalTabs}`}
                     </div>
                   </div>
-
                   <div>
                     <div className="text-xs text-gray-400 mb-1">Destination Folder</div>
                     <div className="text-sm font-medium bg-gray-900 p-3 rounded">
                       {currentFile.selectedFolder || 'Not selected'}
                     </div>
                   </div>
-
                   {currentFile.position && (
                     <div>
                       <div className="text-xs text-gray-400 mb-1">Placement Position</div>
@@ -340,21 +380,28 @@ export default function CorrectionCheckModal({
           {currentFile ? (
             <>
               <div
-                className="flex-1 flex items-center justify-center overflow-auto w-full"
-                style={{ zoom: `${zoom}%` }}
+                className="flex-1 flex items-center justify-center overflow-auto w-full p-4"
               >
                 {currentFile.fileType === 'jpg' ? (
                   <img
                     src={currentFile.pdfDataUrl}
                     alt={`Design Preview - Order ${currentFile.orderNumber}`}
-                    className="max-w-[900px] max-h-[1100px] bg-white shadow-2xl"
+                    className="bg-white shadow-2xl"
+                    style={{
+                      maxWidth: `${900 * (zoom / 100)}px`,
+                      maxHeight: `${1100 * (zoom / 100)}px`,
+                      width: 'auto',
+                      height: 'auto'
+                    }}
                   />
                 ) : (
-                  <iframe
-                    src={currentFile.pdfDataUrl}
-                    className="w-[900px] h-[1100px] bg-white shadow-2xl"
-                    title={`PDF Preview - Order ${currentFile.orderNumber}`}
-                  />
+                  <div style={{ transform: `scale(${zoom / 100})`, transformOrigin: 'center top' }}>
+                    <PDFCanvasViewer
+                      key={currentFile.tabId}
+                      pdfFile={currentFile.pdfFile}
+                      zoom={zoom}
+                    />
+                  </div>
                 )}
               </div>
 
