@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { Search, Filter, CheckCircle, Clock, Package, ArrowUpDown } from 'lucide-react';
+import { Search, Filter, CheckCircle, Clock, Package, ArrowUpDown, PauseCircle } from 'lucide-react';
 import { OrderWithTabs } from '../lib/types';
 
 interface OrderDashboardProps {
@@ -8,7 +8,7 @@ interface OrderDashboardProps {
   selectedOrderId: string | null;
 }
 
-type FilterType = 'all' | 'customized' | 'ready-made' | 'pending' | 'uploaded' | 'saved';
+type FilterType = 'all' | 'customized' | 'ready-made' | 'pending' | 'uploaded' | 'saved' | 'hold';
 type SKUFilterType = 'all' | 'CH' | 'CD' | 'BL' | 'other';
 type SortType = 'default' | 'sku-asc' | 'sku-desc';
 
@@ -29,9 +29,10 @@ export function OrderDashboard({ orders, onSelectOrder, selectedOrderId }: Order
         filter === 'all' ||
         (filter === 'customized' && order.is_customized) ||
         (filter === 'ready-made' && !order.is_customized) ||
-        (filter === 'pending' && order.status === 'pending') ||
+        (filter === 'pending' && order.status === 'pending' && !order.is_on_hold) ||
         (filter === 'uploaded' && order.status === 'uploaded') ||
-        (filter === 'saved' && order.status === 'saved');
+        (filter === 'saved' && order.status === 'saved') ||
+        (filter === 'hold' && order.is_on_hold);
 
       const matchesSKU =
         skuFilter === 'all' ||
@@ -57,14 +58,16 @@ export function OrderDashboard({ orders, onSelectOrder, selectedOrderId }: Order
       total: orders.length,
       customized: orders.filter(o => o.is_customized).length,
       readyMade: orders.filter(o => !o.is_customized).length,
-      pending: orders.filter(o => o.status === 'pending').length,
+      pending: orders.filter(o => o.status === 'pending' && !o.is_on_hold).length,
       uploaded: orders.filter(o => o.status === 'uploaded').length,
-      saved: orders.filter(o => o.status === 'saved').length
+      saved: orders.filter(o => o.status === 'saved').length,
+      onHold: orders.filter(o => o.is_on_hold).length
     };
   }, [orders]);
 
-  const getStatusIcon = (status: string) => {
-    switch (status) {
+  const getStatusIcon = (order: OrderWithTabs) => {
+    if (order.is_on_hold) return <PauseCircle className="w-5 h-5 text-amber-500" />;
+    switch (order.status) {
       case 'saved':
         return <CheckCircle className="w-5 h-5 text-green-600" />;
       case 'uploaded':
@@ -77,18 +80,22 @@ export function OrderDashboard({ orders, onSelectOrder, selectedOrderId }: Order
   return (
     <div className="flex flex-col h-full">
       <div className="bg-white border-b border-gray-200 p-4">
-        <div className="grid grid-cols-3 gap-4 mb-4">
+        <div className="grid grid-cols-2 gap-3 mb-4">
           <div className="bg-gray-50 p-3 rounded-lg">
             <div className="text-sm text-gray-600">Total Orders</div>
             <div className="text-2xl font-bold text-gray-900">{stats.total}</div>
+          </div>
+          <div className="bg-green-50 p-3 rounded-lg">
+            <div className="text-sm text-green-600">Saved</div>
+            <div className="text-2xl font-bold text-green-900">{stats.saved}</div>
           </div>
           <div className="bg-blue-50 p-3 rounded-lg">
             <div className="text-sm text-blue-600">Customized</div>
             <div className="text-2xl font-bold text-blue-900">{stats.customized}</div>
           </div>
-          <div className="bg-green-50 p-3 rounded-lg">
-            <div className="text-sm text-green-600">Completed</div>
-            <div className="text-2xl font-bold text-green-900">{stats.saved}</div>
+          <div className="bg-amber-50 p-3 rounded-lg">
+            <div className="text-sm text-amber-600">On Hold</div>
+            <div className="text-2xl font-bold text-amber-900">{stats.onHold}</div>
           </div>
         </div>
 
@@ -108,14 +115,14 @@ export function OrderDashboard({ orders, onSelectOrder, selectedOrderId }: Order
             <Filter className="w-4 h-4 text-gray-500" />
             <span className="text-sm font-medium text-gray-700">Status:</span>
           </div>
-          {(['all', 'customized', 'ready-made', 'pending', 'uploaded', 'saved'] as FilterType[]).map(f => (
+          {(['all', 'customized', 'ready-made', 'pending', 'uploaded', 'saved', 'hold'] as FilterType[]).map(f => (
             <button
               key={f}
               onClick={() => setFilter(f)}
               className={`px-3 py-1 rounded-full text-sm font-medium transition-colors ${
                 filter === f
-                  ? 'bg-blue-600 text-white'
-                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  ? f === 'hold' ? 'bg-amber-500 text-white' : 'bg-blue-600 text-white'
+                  : f === 'hold' ? 'bg-amber-50 text-amber-700 hover:bg-amber-100' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
               }`}
             >
               {f.replace('-', ' ')}
@@ -173,20 +180,25 @@ export function OrderDashboard({ orders, onSelectOrder, selectedOrderId }: Order
               onClick={() => onSelectOrder(order)}
               className={`w-full text-left p-4 rounded-lg border-2 transition-all ${
                 selectedOrderId === order.id
-                  ? 'border-blue-500 bg-blue-50'
-                  : 'border-gray-200 bg-white hover:border-gray-300 hover:shadow-sm'
+                  ? order.is_on_hold ? 'border-amber-400 bg-amber-50' : 'border-blue-500 bg-blue-50'
+                  : order.is_on_hold ? 'border-amber-200 bg-amber-50/50 hover:border-amber-300' : 'border-gray-200 bg-white hover:border-gray-300 hover:shadow-sm'
               }`}
             >
               <div className="flex items-start justify-between gap-4">
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-1">
-                    {getStatusIcon(order.status)}
+                    {getStatusIcon(order)}
                     <span className="font-semibold text-gray-900">
                       Order #{order.order_number}
                     </span>
                     {order.is_customized && (
-                      <span className="px-2 py-0.5 bg-purple-100 text-purple-700 text-xs font-medium rounded">
+                      <span className="px-2 py-0.5 bg-blue-100 text-blue-700 text-xs font-medium rounded">
                         Customized
+                      </span>
+                    )}
+                    {order.is_on_hold && (
+                      <span className="px-2 py-0.5 bg-amber-100 text-amber-700 text-xs font-medium rounded">
+                        On Hold
                       </span>
                     )}
                   </div>
@@ -204,11 +216,12 @@ export function OrderDashboard({ orders, onSelectOrder, selectedOrderId }: Order
                 </div>
                 <div className="flex flex-col items-end gap-1">
                   <span className={`px-2 py-1 rounded text-xs font-medium ${
+                    order.is_on_hold ? 'bg-amber-100 text-amber-700' :
                     order.status === 'saved' ? 'bg-green-100 text-green-700' :
                     order.status === 'uploaded' ? 'bg-blue-100 text-blue-700' :
                     'bg-gray-100 text-gray-700'
                   }`}>
-                    {order.status}
+                    {order.is_on_hold ? 'on hold' : order.status}
                   </span>
                   {order.tabs.filter(t => t.pdfFile).length > 0 && (
                     <span className="text-xs text-gray-500">

@@ -41,13 +41,21 @@ export function parseCSV(file: File, columnMapping?: CSVColumnMapping | null): P
   });
 }
 
-export function isCustomizedOrder(title: string, customerNote: string): boolean {
+export function isCustomizedOrder(title: string, customerNote: string, sku?: string): boolean {
   const titleLower = title.toLowerCase();
-  return titleLower.includes('personalised') ||
-         titleLower.includes('customised') ||
-         titleLower.includes('personalized') ||
-         titleLower.includes('customized') ||
-         customerNote.trim().length > 0;
+  const hasCustomKeyword =
+    titleLower.includes('personalised') ||
+    titleLower.includes('customised') ||
+    titleLower.includes('personalized') ||
+    titleLower.includes('customized');
+
+  // Wrapper products (CH-/LTCH-/SMCH- SKUs): title keywords only — customer note is ignored
+  const skuUpper = sku ? sku.toUpperCase() : '';
+  if (skuUpper.startsWith('CH-') || skuUpper.startsWith('LTCH-') || skuUpper.startsWith('SMCH-')) {
+    return hasCustomKeyword;
+  }
+
+  return hasCustomKeyword || customerNote.trim().length > 0;
 }
 
 export function extractImageUrls(text: string): string[] {
@@ -155,7 +163,7 @@ export function convertCSVRowsToOrderItems(
       totalTabs += tabsForLine;
     });
 
-    const isCustomized = isCustomizedOrder(firstRow.title, firstRow.customer_note);
+    const isCustomized = isCustomizedOrder(firstRow.title, firstRow.customer_note, firstRow.sku);
 
     // Create single order item for this order_number
     orderItems.push({
@@ -175,6 +183,9 @@ export function convertCSVRowsToOrderItems(
       total_tabs: totalTabs, // Sum of tabs across all lines
       status: 'pending',
       saved_at: null,
+      marked_for_review: false,
+      review_notes: '',
+      is_on_hold: false,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString()
     });

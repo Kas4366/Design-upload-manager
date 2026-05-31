@@ -100,7 +100,7 @@ function App() {
 
     // Check if session has ready-made orders and prompt for premade folder if needed
     const hasReadyMadeOrders = ordersWithTabs.some(order =>
-      premadeDesignService.isReadyMadeOrder(order.product_title, order.customer_note)
+      premadeDesignService.isReadyMadeOrder(order.product_title, order.customer_note, order.sku)
     );
 
     if (hasReadyMadeOrders) {
@@ -213,7 +213,7 @@ function App() {
 
     // Check if there are any ready-made orders and prompt for premade folder if needed
     const hasReadyMadeOrders = insertedOrders.some(order =>
-      premadeDesignService.isReadyMadeOrder(order.product_title, order.customer_note)
+      premadeDesignService.isReadyMadeOrder(order.product_title, order.customer_note, order.sku)
     );
 
     if (hasReadyMadeOrders) {
@@ -310,7 +310,7 @@ function App() {
 
       const imageUrls = extractImageUrls(`${order.customer_note} ${order.additional_options}`);
 
-      const isReadyMade = premadeDesignService.isReadyMadeOrder(order.product_title, order.customer_note);
+      const isReadyMade = premadeDesignService.isReadyMadeOrder(order.product_title, order.customer_note, order.sku);
 
       if (isReadyMade) {
         setUploadProgress(`Loading ready-made designs (${ordersWithTabs.length + 1}/${insertedOrders.length})...`);
@@ -713,14 +713,16 @@ function App() {
         ));
 
         if (currentSession) {
-          const completedCount = orders.filter(o => o.status === 'saved').length + 1;
+          const savedCount = orders.filter(o => o.status === 'saved').length + 1;
+          const onHoldCount = orders.filter(o => o.is_on_hold && o.id !== selectedOrder.id).length;
+          const handledCount = savedCount + onHoldCount;
 
           await supabase
             .from('processing_sessions')
             .update({
-              completed_orders: completedCount,
-              status: completedCount === orders.length ? 'completed' : 'in_progress',
-              completed_at: completedCount === orders.length ? new Date().toISOString() : null
+              completed_orders: handledCount,
+              status: handledCount === orders.length ? 'completed' : 'in_progress',
+              completed_at: handledCount === orders.length ? new Date().toISOString() : null
             })
             .eq('id', currentSession.id);
         }
@@ -800,20 +802,52 @@ function App() {
       }
 
       if (currentSession) {
-        const completedCount = updatedOrders.filter(o => o.status === 'saved').length;
+        const savedCount = updatedOrders.filter(o => o.status === 'saved').length;
+        const onHoldCount = updatedOrders.filter(o => o.is_on_hold).length;
+        const handledCount = savedCount + onHoldCount;
 
         await supabase
           .from('processing_sessions')
           .update({
-            completed_orders: completedCount,
-            status: completedCount === orders.length ? 'completed' : 'in_progress',
-            completed_at: completedCount === orders.length ? new Date().toISOString() : null
+            completed_orders: handledCount,
+            status: handledCount === orders.length ? 'completed' : 'in_progress',
+            completed_at: handledCount === orders.length ? new Date().toISOString() : null
           })
           .eq('id', currentSession.id);
       }
     } finally {
       setIsSaving(false);
       setSaveProgress('');
+    }
+  };
+
+  const handleToggleHold = async () => {
+    if (!selectedOrder) return;
+    const newIsOnHold = !selectedOrder.is_on_hold;
+
+    const updatedOrder = { ...selectedOrder, is_on_hold: newIsOnHold };
+    setSelectedOrder(updatedOrder);
+    setOrders(orders.map(o => o.id === selectedOrder.id ? updatedOrder : o));
+
+    await supabase
+      .from('order_items')
+      .update({ is_on_hold: newIsOnHold, updated_at: new Date().toISOString() })
+      .eq('id', selectedOrder.id);
+
+    if (currentSession) {
+      const updatedOrders = orders.map(o => o.id === selectedOrder.id ? updatedOrder : o);
+      const savedCount = updatedOrders.filter(o => o.status === 'saved').length;
+      const onHoldCount = updatedOrders.filter(o => o.is_on_hold).length;
+      const handledCount = savedCount + onHoldCount;
+
+      await supabase
+        .from('processing_sessions')
+        .update({
+          completed_orders: handledCount,
+          status: handledCount === orders.length ? 'completed' : 'in_progress',
+          completed_at: handledCount === orders.length ? new Date().toISOString() : null
+        })
+        .eq('id', currentSession.id);
     }
   };
 
@@ -922,7 +956,12 @@ function App() {
               <h1 className="text-2xl font-bold text-gray-900">Design Upload Manager</h1>
               {currentSession && (
                 <p className="text-sm text-gray-600 mt-1">
-                  Session: {currentSession.csv_filename} | {currentSession.completed_orders}/{currentSession.total_orders} completed
+                  Session: {currentSession.csv_filename} |{' '}
+                  {orders.filter(o => o.status === 'saved').length} saved
+                  {orders.filter(o => o.is_on_hold).length > 0 && (
+                    <>, {orders.filter(o => o.is_on_hold).length} on hold</>
+                  )}{' '}
+                  — {currentSession.completed_orders}/{currentSession.total_orders} handled
                 </p>
               )}
             </div>
@@ -989,6 +1028,7 @@ function App() {
               onToggleCard={handleToggleCard}
               onFolderSelect={handleFolderSelect}
               onSaveOrder={handleSaveOrder}
+              onToggleHold={handleToggleHold}
             />
           ) : (
             <div className="h-full flex items-center justify-center text-gray-500">

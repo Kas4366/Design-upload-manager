@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { X, CheckCircle, AlertCircle, FileX, Hash, FolderX, Search } from 'lucide-react';
+import { X, CheckCircle, AlertCircle, FileX, Hash, FolderX, Search, PauseCircle } from 'lucide-react';
 import { OrderValidationResult, OrderWithTabs } from '../lib/types';
 import { validationService } from '../lib/validationService';
 
@@ -19,14 +19,17 @@ export default function SaveValidationModal({
   const [selectedOrders, setSelectedOrders] = useState<Set<string>>(new Set());
   const [searchTerm, setSearchTerm] = useState('');
 
+  const onHoldOrders = useMemo(() => orders.filter(o => o.is_on_hold), [orders]);
+  const activeOrders = useMemo(() => orders.filter(o => !o.is_on_hold), [orders]);
+
   const validationResults = useMemo(() =>
-    validationService.validateAllOrders(orders),
-    [orders]
+    validationService.validateAllOrders(activeOrders),
+    [activeOrders]
   );
 
   const summary = useMemo(() =>
-    validationService.getValidationSummary(orders),
-    [orders]
+    validationService.getValidationSummary(activeOrders),
+    [activeOrders]
   );
 
   const filteredResults = useMemo(() => {
@@ -89,10 +92,10 @@ export default function SaveValidationModal({
         </div>
 
         <div className="p-6 border-b bg-gray-50">
-          <div className="grid grid-cols-3 gap-4 mb-4">
+          <div className="grid grid-cols-4 gap-4 mb-4">
             <div className="bg-white p-4 rounded-lg border">
               <div className="text-sm text-gray-600">Total Orders</div>
-              <div className="text-2xl font-bold text-gray-900">{summary.total}</div>
+              <div className="text-2xl font-bold text-gray-900">{orders.length}</div>
             </div>
             <div className="bg-white p-4 rounded-lg border border-green-200">
               <div className="text-sm text-green-700">Complete</div>
@@ -101,6 +104,10 @@ export default function SaveValidationModal({
             <div className="bg-white p-4 rounded-lg border border-red-200">
               <div className="text-sm text-red-700">Incomplete</div>
               <div className="text-2xl font-bold text-red-600">{summary.incomplete}</div>
+            </div>
+            <div className="bg-white p-4 rounded-lg border border-amber-200">
+              <div className="text-sm text-amber-700">On Hold</div>
+              <div className="text-2xl font-bold text-amber-600">{onHoldOrders.length}</div>
             </div>
           </div>
 
@@ -226,6 +233,31 @@ export default function SaveValidationModal({
                 </div>
               </div>
             ))}
+
+            {onHoldOrders.length > 0 && (
+              <div className="mt-4">
+                <div className="flex items-center gap-2 mb-3">
+                  <PauseCircle className="w-5 h-5 text-amber-600" />
+                  <h3 className="text-sm font-semibold text-amber-800">On Hold — Not Saved ({onHoldOrders.length})</h3>
+                </div>
+                <div className="space-y-2">
+                  {onHoldOrders.filter(o =>
+                    !searchTerm ||
+                    o.order_number.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                    o.veeqo_id.toLowerCase().includes(searchTerm.toLowerCase())
+                  ).map(order => (
+                    <div key={order.id} className="border border-amber-200 bg-amber-50 rounded-lg p-4 flex items-center gap-3">
+                      <PauseCircle className="w-5 h-5 text-amber-500 flex-shrink-0" />
+                      <div className="flex-1">
+                        <div className="font-semibold text-gray-900">Order #{order.order_number}</div>
+                        <div className="text-sm text-gray-600">Veeqo ID: {order.veeqo_id}</div>
+                      </div>
+                      <span className="px-2 py-1 bg-amber-100 text-amber-700 text-xs font-medium rounded">On Hold</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         </div>
 

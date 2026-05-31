@@ -101,7 +101,7 @@ export const premadeDesignService = {
     }
   },
 
-  isReadyMadeOrder(productTitle: string, customerNote: string): boolean {
+  isReadyMadeOrder(productTitle: string, customerNote: string, sku?: string): boolean {
     const title = productTitle.toLowerCase();
     const note = customerNote.toLowerCase().trim();
 
@@ -115,6 +115,12 @@ export const premadeDesignService = {
 
     if (customizationKeywords.some(keyword => title.includes(keyword))) {
       return false;
+    }
+
+    // Wrapper products (CH-/LTCH-/SMCH- SKUs): customer note alone does not make it custom
+    const skuUpper = sku ? sku.toUpperCase() : '';
+    if (skuUpper.startsWith('CH-') || skuUpper.startsWith('LTCH-') || skuUpper.startsWith('SMCH-')) {
+      return true;
     }
 
     if (note.length > 0) {

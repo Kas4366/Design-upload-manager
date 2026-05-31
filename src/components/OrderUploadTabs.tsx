@@ -1,5 +1,5 @@
 import { useState, useRef } from 'react';
-import { Upload, FileText, CheckCircle, X, MapPin, Save, Trash2, Folder, AlertCircle, Tag } from 'lucide-react';
+import { Upload, FileText, CheckCircle, X, MapPin, Save, Trash2, Folder, AlertCircle, Tag, PauseCircle } from 'lucide-react';
 import { OrderWithTabs, FolderType } from '../lib/types';
 import { findCardPair, isCardTab } from '../lib/csvParser';
 import { FilePreview } from './FilePreview';
@@ -17,6 +17,7 @@ interface OrderUploadTabsProps {
   onToggleCard: (tabId: string, isCard: boolean) => void;
   onFolderSelect: (tabId: string, folder: string) => void;
   onSaveOrder: () => void;
+  onToggleHold: () => void;
 }
 
 export function OrderUploadTabs({
@@ -29,7 +30,8 @@ export function OrderUploadTabs({
   onClearPosition,
   onToggleCard,
   onFolderSelect,
-  onSaveOrder
+  onSaveOrder,
+  onToggleHold
 }: OrderUploadTabsProps) {
   const [activeTabId, setActiveTabId] = useState(order.tabs[0]?.id || '');
   const [validationError, setValidationError] = useState<string | null>(null);
@@ -82,7 +84,7 @@ export function OrderUploadTabs({
   });
 
   const allTabsHaveFolders = order.tabs.every(tab => tab.selectedFolder !== null);
-  const canSave = allTabsHaveFiles && allTabsHaveOrderNumbers && allTabsHaveFolders;
+  const canSave = allTabsHaveFiles && allTabsHaveOrderNumbers && allTabsHaveFolders && !order.is_on_hold;
 
   const uploadedCount = order.tabs.filter(t => t.pdfFile).length;
 
@@ -120,20 +122,46 @@ export function OrderUploadTabs({
             </p>
             <p className="text-sm text-gray-700 mt-2">{order.product_title}</p>
           </div>
-          <button
-            onClick={onSaveOrder}
-            disabled={!canSave}
-            className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-colors ${
-              canSave
-                ? 'bg-green-600 text-white hover:bg-green-700'
-                : 'bg-gray-200 text-gray-400 cursor-not-allowed'
-            }`}
-            title={!canSave ? 'All tabs must have files, order numbers placed, and folders selected' : ''}
-          >
-            <Save className="w-5 h-5" />
-            Save Design Files
-          </button>
+          <div className="flex flex-col items-end gap-2">
+            <button
+              onClick={onSaveOrder}
+              disabled={!canSave}
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-colors ${
+                canSave
+                  ? 'bg-green-600 text-white hover:bg-green-700'
+                  : 'bg-gray-200 text-gray-400 cursor-not-allowed'
+              }`}
+              title={
+                order.is_on_hold
+                  ? 'Order is on hold — remove hold to save'
+                  : !canSave
+                  ? 'All tabs must have files, order numbers placed, and folders selected'
+                  : ''
+              }
+            >
+              <Save className="w-5 h-5" />
+              Save Design Files
+            </button>
+            <button
+              onClick={onToggleHold}
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                order.is_on_hold
+                  ? 'bg-amber-500 text-white hover:bg-amber-600'
+                  : 'border border-amber-400 text-amber-700 hover:bg-amber-50'
+              }`}
+            >
+              <PauseCircle className="w-4 h-4" />
+              {order.is_on_hold ? 'On Hold — Remove Hold' : 'Mark as Hold'}
+            </button>
+          </div>
         </div>
+
+        {order.is_on_hold && (
+          <div className="bg-amber-50 border border-amber-300 rounded-lg p-3 mb-4 flex items-center gap-2">
+            <PauseCircle className="w-5 h-5 text-amber-600 shrink-0" />
+            <p className="text-sm font-semibold text-amber-800">This order is on hold — saving is disabled until the hold is removed.</p>
+          </div>
+        )}
 
         {order.customer_note && (
           <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 mb-4">

@@ -139,6 +139,7 @@ export interface Database {
           is_card: boolean;
           marked_for_review: boolean;
           review_notes: string;
+          is_on_hold: boolean;
         };
         Insert: {
           id?: string;
@@ -161,6 +162,7 @@ export interface Database {
           is_card?: boolean;
           marked_for_review?: boolean;
           review_notes?: string;
+          is_on_hold?: boolean;
         };
         Update: {
           id?: string;
@@ -183,6 +185,7 @@ export interface Database {
           is_card?: boolean;
           marked_for_review?: boolean;
           review_notes?: string;
+          is_on_hold?: boolean;
         };
       };
       tab_metadata: {
@@ -441,6 +444,7 @@ export interface OrderItem {
   is_card: boolean;
   marked_for_review: boolean;
   review_notes: string;
+  is_on_hold: boolean;
 }
 
 export interface CSVRow {
