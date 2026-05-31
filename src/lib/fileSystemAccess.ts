@@ -9,6 +9,7 @@ export interface FileSystemAPI {
   ) => Promise<boolean>;
   verifyPermission: (handle: FileSystemDirectoryHandle) => Promise<boolean>;
   readFile: (dirHandle: FileSystemDirectoryHandle, filename: string) => Promise<{ file: File; dataUrl: string } | null>;
+  readFileFromPath: (dirHandle: FileSystemDirectoryHandle, filePath: string) => Promise<{ file: File; dataUrl: string } | null>;
 }
 
 async function verifyPermission(
@@ -112,6 +113,37 @@ async function readFile(
   }
 }
 
+// Reads a file given a relative path like "Cards/12345.pdf" under dirHandle
+async function readFileFromPath(
+  dirHandle: FileSystemDirectoryHandle,
+  filePath: string
+): Promise<{ file: File; dataUrl: string } | null> {
+  try {
+    const hasPermission = await verifyPermission(dirHandle, false);
+    if (!hasPermission) return null;
+
+    const parts = filePath.split('/').filter(p => p.length > 0);
+    const filename = parts.pop()!;
+
+    let currentDir = dirHandle;
+    for (const part of parts) {
+      currentDir = await currentDir.getDirectoryHandle(part);
+    }
+
+    const fileHandle = await currentDir.getFileHandle(filename);
+    const file = await fileHandle.getFile();
+    const dataUrl = URL.createObjectURL(file);
+
+    return { file, dataUrl };
+  } catch (error) {
+    if (error instanceof Error && (error.name === 'NotFoundError' || error.name === 'TypeMismatchError')) {
+      return null;
+    }
+    console.error('Error reading file from path:', error);
+    return null;
+  }
+}
+
 function isFileSystemAccessSupported(): boolean {
   return 'showDirectoryPicker' in window;
 }
@@ -121,7 +153,8 @@ export const fileSystemAPI: FileSystemAPI = {
   requestFolderAccess,
   saveFile,
   verifyPermission,
-  readFile
+  readFile,
+  readFileFromPath
 };
 
 const DB_NAME = 'DesignUploadManager';
@@ -297,5 +330,57 @@ export async function clearReferenceImagesFolderHandle(): Promise<void> {
     });
   } catch (error) {
     console.error('Error clearing reference images folder handle:', error);
+  }
+}
+
+export async function saveCheckFolderHandle(handle: FileSystemDirectoryHandle): Promise<void> {
+  try {
+    const db = await openDB();
+    const transaction = db.transaction(STORE_NAME, 'readwrite');
+    const store = transaction.objectStore(STORE_NAME);
+    store.put(handle, 'checkFolderHandle');
+
+    await new Promise<void>((resolve, reject) => {
+      transaction.oncomplete = () => resolve();
+      transaction.onerror = () => reject(transaction.error);
+    });
+  } catch (error) {
+    console.error('Error saving check folder handle:', error);
+  }
+}
+
+export async function loadCheckFolderHandle(): Promise<FileSystemDirectoryHandle | null> {
+  try {
+    const db = await openDB();
+    const transaction = db.transaction(STORE_NAME, 'readonly');
+    const store = transaction.objectStore(STORE_NAME);
+    const request = store.get('checkFolderHandle');
+
+    return new Promise((resolve, reject) => {
+      request.onsuccess = () => {
+        const handle = request.result as FileSystemDirectoryHandle | undefined;
+        resolve(handle || null);
+      };
+      request.onerror = () => reject(request.error);
+    });
+  } catch (error) {
+    console.error('Error loading check folder handle:', error);
+    return null;
+  }
+}
+
+export async function clearCheckFolderHandle(): Promise<void> {
+  try {
+    const db = await openDB();
+    const transaction = db.transaction(STORE_NAME, 'readwrite');
+    const store = transaction.objectStore(STORE_NAME);
+    store.delete('checkFolderHandle');
+
+    await new Promise<void>((resolve, reject) => {
+      transaction.oncomplete = () => resolve();
+      transaction.onerror = () => reject(transaction.error);
+    });
+  } catch (error) {
+    console.error('Error clearing check folder handle:', error);
   }
 }

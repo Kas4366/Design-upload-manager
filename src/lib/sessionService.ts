@@ -4,6 +4,7 @@ import { getSessionFiles, fetchFileAsBlob } from './cloudStorage';
 import { productTypePositionService } from './productTypePositionService';
 import { calculateTabsForOrder, createEmptyTabs, isCardSKU } from './csvParser';
 import { folderSelectionService } from './folderSelectionService';
+import { fileSystemAPI } from './fileSystemAccess';
 
 function blobToDataUrl(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -368,7 +369,10 @@ async function reconstructTabsFromLineItems(
   return allTabs;
 }
 
-export async function loadSessionData(sessionId: string): Promise<OrderWithTabs[] | null> {
+export async function loadSessionData(
+  sessionId: string,
+  checkFolderHandle?: FileSystemDirectoryHandle | null
+): Promise<OrderWithTabs[] | null> {
   try {
     const { data: orders, error: ordersError } = await supabase
       .from('order_items')
@@ -405,6 +409,17 @@ export async function loadSessionData(sessionId: string): Promise<OrderWithTabs[
 
     const uploadedFiles = await getSessionFiles(sessionId);
     const positions = await getSessionPositions(sessionId);
+
+    // Load saved_files records so we can attempt disk reads
+    const { data: allSavedFiles } = await supabase
+      .from('saved_files')
+      .select('*')
+      .in('order_item_id', orders.map(o => o.id));
+
+    const savedFilesMap = new Map<string, { file_path: string }>();
+    for (const sf of allSavedFiles || []) {
+      savedFilesMap.set(`${sf.order_item_id}:${sf.tab_id}`, { file_path: sf.file_path });
+    }
 
     // Check if we need to use migration fallback
     const hasTabMetadata = allTabMetadata && allTabMetadata.length > 0;
@@ -459,6 +474,20 @@ export async function loadSessionData(sessionId: string): Promise<OrderWithTabs[
             pdfFile = new File([blob], uploadedFile.originalFilename, { type: blob.type });
             pdfDataUrl = await blobToDataUrl(blob);
             fileType = uploadedFile.fileType === 'pdf' ? 'pdf' : 'jpg';
+          }
+        }
+
+        // If no cloud file, try loading from the saved output folder on disk
+        if (!pdfFile && checkFolderHandle) {
+          const savedRecord = savedFilesMap.get(`${order.id}:${tabMeta.tab_id}`);
+          if (savedRecord) {
+            const diskResult = await fileSystemAPI.readFileFromPath(checkFolderHandle, savedRecord.file_path);
+            if (diskResult) {
+              pdfFile = diskResult.file;
+              pdfDataUrl = diskResult.dataUrl;
+              const ext = savedRecord.file_path.split('.').pop()?.toLowerCase();
+              fileType = ext === 'jpg' || ext === 'jpeg' ? 'jpg' : 'pdf';
+            }
           }
         }
 
@@ -539,6 +568,21 @@ export async function loadSessionData(sessionId: string): Promise<OrderWithTabs[
               tab.pdfDataUrl = await blobToDataUrl(blob);
               tab.fileType = uploadedFile.fileType === 'pdf' ? 'pdf' : 'jpg';
               tab.isAutoLoaded = true;
+            }
+          }
+
+          // If no cloud file, try loading from the saved output folder on disk
+          if (!tab.pdfFile && checkFolderHandle) {
+            const savedRecord = savedFilesMap.get(`${order.id}:${tab.id}`);
+            if (savedRecord) {
+              const diskResult = await fileSystemAPI.readFileFromPath(checkFolderHandle, savedRecord.file_path);
+              if (diskResult) {
+                tab.pdfFile = diskResult.file;
+                tab.pdfDataUrl = diskResult.dataUrl;
+                const ext = savedRecord.file_path.split('.').pop()?.toLowerCase();
+                tab.fileType = ext === 'jpg' || ext === 'jpeg' ? 'jpg' : 'pdf';
+                tab.isAutoLoaded = true;
+              }
             }
           }
 

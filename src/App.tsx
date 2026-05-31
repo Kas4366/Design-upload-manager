@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Settings, FileUp, List, Upload, CheckSquare, Eye, FolderOpen } from 'lucide-react';
+import { Settings, FileUp, List, Upload, CheckSquare, Eye, FolderOpen, FolderCheck } from 'lucide-react';
 import { CSVUpload } from './components/CSVUpload';
 import { OrderDashboard } from './components/OrderDashboard';
 import { OrderUploadTabs } from './components/OrderUploadTabs';
@@ -18,7 +18,7 @@ import { premadeDesignService } from './lib/premadeDesignService';
 import { getFileDimensions } from './lib/pdfProcessor';
 import { loadSessionData, updateSessionAccess, findSessionByCSVFilename, archiveSession } from './lib/sessionService';
 import { productTypePositionService } from './lib/productTypePositionService';
-import { loadPremadeFolderHandle, savePremadeFolderHandle } from './lib/fileSystemAccess';
+import { loadPremadeFolderHandle, savePremadeFolderHandle, loadCheckFolderHandle, saveCheckFolderHandle } from './lib/fileSystemAccess';
 import { fileSystemAPI } from './lib/fileSystemAccess';
 import type { CSVRow, OrderWithTabs, ProcessingSession, UploadTab, FolderType, SKURoutingRule } from './lib/types';
 
@@ -38,7 +38,7 @@ function App() {
   const [uploadProgress, setUploadProgress] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [saveProgress, setSaveProgress] = useState('');
-
+  const [checkFolderHandle, setCheckFolderHandle] = useState<FileSystemDirectoryHandle | null>(null);
   useEffect(() => {
     loadFoldersAndRules();
     testDatabaseConnection();
@@ -91,7 +91,36 @@ function App() {
       return;
     }
 
-    const ordersWithTabs = await loadSessionData(sessionId);
+    // Prompt for saved output folder so saved design files can be loaded
+    let folderHandle: FileSystemDirectoryHandle | null = null;
+
+    if (fileSystemAPI.isSupported) {
+      // Try existing stored handle first
+      folderHandle = await loadCheckFolderHandle();
+
+      if (folderHandle && !(await fileSystemAPI.verifyPermission(folderHandle))) {
+        folderHandle = null;
+      }
+
+      if (!folderHandle) {
+        const wantsFolder = window.confirm(
+          'To load saved design files, please select the folder where designs were saved (the print PC\'s output folder).\n\n' +
+          'Click OK to select the folder, or Cancel to load the session without design files.'
+        );
+
+        if (wantsFolder) {
+          folderHandle = await fileSystemAPI.requestFolderAccess();
+          if (folderHandle) {
+            await saveCheckFolderHandle(folderHandle);
+            setCheckFolderHandle(folderHandle);
+          }
+        }
+      } else {
+        setCheckFolderHandle(folderHandle);
+      }
+    }
+
+    const ordersWithTabs = await loadSessionData(sessionId, folderHandle);
 
     if (!ordersWithTabs) {
       alert('Failed to load session data');
@@ -856,6 +885,27 @@ function App() {
     setOrders([]);
     setSelectedOrder(null);
     setCurrentSession(null);
+    setCheckFolderHandle(null);
+  };
+
+  const handleReselectCheckFolder = async () => {
+    const handle = await fileSystemAPI.requestFolderAccess();
+    if (handle) {
+      await saveCheckFolderHandle(handle);
+      setCheckFolderHandle(handle);
+
+      // Reload current session with the new folder handle
+      if (currentSession) {
+        const ordersWithTabs = await loadSessionData(currentSession.id, handle);
+        if (ordersWithTabs) {
+          setOrders(ordersWithTabs);
+          if (selectedOrder) {
+            const refreshed = ordersWithTabs.find(o => o.id === selectedOrder.id);
+            if (refreshed) setSelectedOrder(refreshed);
+          }
+        }
+      }
+    }
   };
 
   if (view === 'upload') {
@@ -967,6 +1017,20 @@ function App() {
             </div>
           </div>
           <div className="flex gap-3">
+            {fileSystemAPI.isSupported && (
+              <button
+                onClick={handleReselectCheckFolder}
+                title={checkFolderHandle ? 'Saved folder linked — click to change' : 'Select saved output folder to load design files'}
+                className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors ${
+                  checkFolderHandle
+                    ? 'bg-teal-600 text-white hover:bg-teal-700'
+                    : 'bg-amber-500 text-white hover:bg-amber-600'
+                }`}
+              >
+                <FolderCheck className="w-5 h-5" />
+                {checkFolderHandle ? 'Output Folder Linked' : 'Link Output Folder'}
+              </button>
+            )}
             <button
               onClick={() => setModalView('correction-check')}
               className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors"
