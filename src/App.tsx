@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Settings, FileUp, List, Upload, CheckSquare, Eye, FolderOpen, FolderCheck } from 'lucide-react';
+import { Settings, FileUp, List, Upload, CheckSquare, Eye, FolderOpen } from 'lucide-react';
 import { CSVUpload } from './components/CSVUpload';
 import { OrderDashboard } from './components/OrderDashboard';
 import { OrderUploadTabs } from './components/OrderUploadTabs';
@@ -18,7 +18,7 @@ import { premadeDesignService } from './lib/premadeDesignService';
 import { getFileDimensions } from './lib/pdfProcessor';
 import { loadSessionData, updateSessionAccess, findSessionByCSVFilename, archiveSession } from './lib/sessionService';
 import { productTypePositionService } from './lib/productTypePositionService';
-import { loadPremadeFolderHandle, savePremadeFolderHandle, loadCheckFolderHandle, saveCheckFolderHandle } from './lib/fileSystemAccess';
+import { loadPremadeFolderHandle, savePremadeFolderHandle } from './lib/fileSystemAccess';
 import { fileSystemAPI } from './lib/fileSystemAccess';
 import type { CSVRow, OrderWithTabs, ProcessingSession, UploadTab, FolderType, SKURoutingRule } from './lib/types';
 
@@ -38,7 +38,9 @@ function App() {
   const [uploadProgress, setUploadProgress] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [saveProgress, setSaveProgress] = useState('');
-  const [checkFolderHandle, setCheckFolderHandle] = useState<FileSystemDirectoryHandle | null>(null);
+  const [isLoadingSession, setIsLoadingSession] = useState(false);
+  const [sessionLoadProgress, setSessionLoadProgress] = useState('');
+  const [sessionLoadStats, setSessionLoadStats] = useState<{ current: number; total: number } | null>(null);
   useEffect(() => {
     loadFoldersAndRules();
     testDatabaseConnection();
@@ -91,68 +93,73 @@ function App() {
       return;
     }
 
-    // Prompt for saved output folder so saved design files can be loaded
-    let folderHandle: FileSystemDirectoryHandle | null = null;
+    // Always prompt for the design files folder
+    let designFolderHandle: FileSystemDirectoryHandle | null = null;
 
     if (fileSystemAPI.isSupported) {
-      // Try existing stored handle first
-      folderHandle = await loadCheckFolderHandle();
+      designFolderHandle = await fileSystemAPI.requestFolderAccess();
+      // User cancelled — load without design files
+    }
 
-      if (folderHandle && !(await fileSystemAPI.verifyPermission(folderHandle))) {
-        folderHandle = null;
+    setIsLoadingSession(true);
+    setSessionLoadProgress('Fetching session data...');
+    setSessionLoadStats(null);
+    setModalView(null);
+
+    try {
+      const ordersWithTabs = await loadSessionData(
+        sessionId,
+        designFolderHandle,
+        (current, total) => {
+          setSessionLoadStats({ current, total });
+          setSessionLoadProgress(`Scanning design files... (${current} of ${total} orders)`);
+        }
+      );
+
+      if (!ordersWithTabs) {
+        alert('Failed to load session data');
+        return;
       }
 
-      if (!folderHandle) {
-        const wantsFolder = window.confirm(
-          'To load saved design files, please select the folder where designs were saved (the print PC\'s output folder).\n\n' +
-          'Click OK to select the folder, or Cancel to load the session without design files.'
-        );
+      // Check if session has ready-made orders and prompt for premade folder if needed
+      const hasReadyMadeOrders = ordersWithTabs.some(order =>
+        premadeDesignService.isReadyMadeOrder(order.product_title, order.customer_note, order.sku)
+      );
 
-        if (wantsFolder) {
-          folderHandle = await fileSystemAPI.requestFolderAccess();
-          if (folderHandle) {
-            await saveCheckFolderHandle(folderHandle);
-            setCheckFolderHandle(folderHandle);
+      if (hasReadyMadeOrders) {
+        setSessionLoadProgress('Checking premade designs folder...');
+        let premadeHandle = await loadPremadeFolderHandle();
+
+        if (!premadeHandle || !(await fileSystemAPI.verifyPermission(premadeHandle))) {
+          premadeHandle = await fileSystemAPI.requestFolderAccess();
+
+          if (premadeHandle) {
+            await savePremadeFolderHandle(premadeHandle);
           }
         }
-      } else {
-        setCheckFolderHandle(folderHandle);
       }
-    }
 
-    const ordersWithTabs = await loadSessionData(sessionId, folderHandle);
+      setSessionLoadProgress('Finishing up...');
+      await updateSessionAccess(sessionId);
 
-    if (!ordersWithTabs) {
-      alert('Failed to load session data');
-      return;
-    }
+      const filesFound = ordersWithTabs.reduce(
+        (count, order) => count + order.tabs.filter(t => t.pdfFile).length,
+        0
+      );
+      const totalTabs = ordersWithTabs.reduce((count, order) => count + order.tabs.length, 0);
+      console.log(`Session loaded — found design files for ${filesFound} of ${totalTabs} tabs`);
 
-    // Check if session has ready-made orders and prompt for premade folder if needed
-    const hasReadyMadeOrders = ordersWithTabs.some(order =>
-      premadeDesignService.isReadyMadeOrder(order.product_title, order.customer_note, order.sku)
-    );
-
-    if (hasReadyMadeOrders) {
-      let premadeHandle = await loadPremadeFolderHandle();
-
-      if (!premadeHandle || !(await fileSystemAPI.verifyPermission(premadeHandle))) {
-        premadeHandle = await fileSystemAPI.requestFolderAccess();
-
-        if (premadeHandle) {
-          await savePremadeFolderHandle(premadeHandle);
-        }
+      setCurrentSession(session);
+      setOrders(ordersWithTabs);
+      if (ordersWithTabs.length > 0) {
+        setSelectedOrder(ordersWithTabs[0]);
       }
+      setView('orders');
+    } finally {
+      setIsLoadingSession(false);
+      setSessionLoadProgress('');
+      setSessionLoadStats(null);
     }
-
-    await updateSessionAccess(sessionId);
-
-    setCurrentSession(session);
-    setOrders(ordersWithTabs);
-    if (ordersWithTabs.length > 0) {
-      setSelectedOrder(ordersWithTabs[0]);
-    }
-    setView('orders');
-    setModalView(null);
   };
 
   const handleCSVParsed = async (rows: CSVRow[], filename: string) => {
@@ -885,28 +892,8 @@ function App() {
     setOrders([]);
     setSelectedOrder(null);
     setCurrentSession(null);
-    setCheckFolderHandle(null);
   };
 
-  const handleReselectCheckFolder = async () => {
-    const handle = await fileSystemAPI.requestFolderAccess();
-    if (handle) {
-      await saveCheckFolderHandle(handle);
-      setCheckFolderHandle(handle);
-
-      // Reload current session with the new folder handle
-      if (currentSession) {
-        const ordersWithTabs = await loadSessionData(currentSession.id, handle);
-        if (ordersWithTabs) {
-          setOrders(ordersWithTabs);
-          if (selectedOrder) {
-            const refreshed = ordersWithTabs.find(o => o.id === selectedOrder.id);
-            if (refreshed) setSelectedOrder(refreshed);
-          }
-        }
-      }
-    }
-  };
 
   if (view === 'upload') {
     return (
@@ -993,6 +980,31 @@ function App() {
             </div>
           </div>
         )}
+        {isLoadingSession && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-white rounded-lg p-8 max-w-md w-full mx-4 shadow-2xl">
+              <div className="flex flex-col items-center">
+                <div className="animate-spin rounded-full h-16 w-16 border-b-4 border-blue-600 mb-4"></div>
+                <h3 className="text-xl font-semibold text-gray-800 mb-2">Loading Session</h3>
+                <p className="text-gray-600 text-center mb-4">{sessionLoadProgress}</p>
+                {sessionLoadStats && (
+                  <div className="w-full">
+                    <div className="flex justify-between text-sm text-gray-500 mb-1">
+                      <span>Orders processed</span>
+                      <span>{sessionLoadStats.current} / {sessionLoadStats.total}</span>
+                    </div>
+                    <div className="w-full bg-gray-200 rounded-full h-2">
+                      <div
+                        className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                        style={{ width: `${Math.round((sessionLoadStats.current / sessionLoadStats.total) * 100)}%` }}
+                      ></div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
       </>
     );
   }
@@ -1017,20 +1029,6 @@ function App() {
             </div>
           </div>
           <div className="flex gap-3">
-            {fileSystemAPI.isSupported && (
-              <button
-                onClick={handleReselectCheckFolder}
-                title={checkFolderHandle ? 'Saved folder linked — click to change' : 'Select saved output folder to load design files'}
-                className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors ${
-                  checkFolderHandle
-                    ? 'bg-teal-600 text-white hover:bg-teal-700'
-                    : 'bg-amber-500 text-white hover:bg-amber-600'
-                }`}
-              >
-                <FolderCheck className="w-5 h-5" />
-                {checkFolderHandle ? 'Output Folder Linked' : 'Link Output Folder'}
-              </button>
-            )}
             <button
               onClick={() => setModalView('correction-check')}
               className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors"

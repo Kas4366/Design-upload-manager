@@ -4,7 +4,7 @@ import { getSessionFiles, fetchFileAsBlob } from './cloudStorage';
 import { productTypePositionService } from './productTypePositionService';
 import { calculateTabsForOrder, createEmptyTabs, isCardSKU } from './csvParser';
 import { folderSelectionService } from './folderSelectionService';
-import { fileSystemAPI } from './fileSystemAccess';
+import { findFileByVeeqoId } from './fileSystemAccess';
 
 function blobToDataUrl(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -371,7 +371,8 @@ async function reconstructTabsFromLineItems(
 
 export async function loadSessionData(
   sessionId: string,
-  checkFolderHandle?: FileSystemDirectoryHandle | null
+  designFolderHandle?: FileSystemDirectoryHandle | null,
+  onProgress?: (current: number, total: number) => void
 ): Promise<OrderWithTabs[] | null> {
   try {
     const { data: orders, error: ordersError } = await supabase
@@ -410,17 +411,6 @@ export async function loadSessionData(
     const uploadedFiles = await getSessionFiles(sessionId);
     const positions = await getSessionPositions(sessionId);
 
-    // Load saved_files records so we can attempt disk reads
-    const { data: allSavedFiles } = await supabase
-      .from('saved_files')
-      .select('*')
-      .in('order_item_id', orders.map(o => o.id));
-
-    const savedFilesMap = new Map<string, { file_path: string }>();
-    for (const sf of allSavedFiles || []) {
-      savedFilesMap.set(`${sf.order_item_id}:${sf.tab_id}`, { file_path: sf.file_path });
-    }
-
     // Check if we need to use migration fallback
     const hasTabMetadata = allTabMetadata && allTabMetadata.length > 0;
     const hasLineItems = allLineItems && allLineItems.length > 0;
@@ -438,92 +428,98 @@ export async function loadSessionData(
     }
 
     const ordersWithTabs: OrderWithTabs[] = [];
+    const total = orders.length;
 
-    for (const order of orders) {
+    for (let orderIdx = 0; orderIdx < orders.length; orderIdx++) {
+      const order = orders[orderIdx];
+      onProgress?.(orderIdx + 1, total);
+
       const lineItems = (allLineItems || []).filter(li => li.order_item_id === order.id);
       const tabMetadata = (allTabMetadata || []).filter(tm => tm.order_item_id === order.id);
+
+      // Count non-inside tabs for filename generation
+      const nonInsideTabCount = tabMetadata.filter(tm => !(tm.is_card && tm.label === 'Inside')).length;
 
       let tabs: UploadTab[] = [];
 
       // Use tab_metadata if available, otherwise reconstruct from line_items
       if (tabMetadata.length > 0) {
-        // Existing logic: use tab_metadata
         for (const tabMeta of tabMetadata) {
           if (!tabMeta || !tabMeta.tab_id || !tabMeta.sku) {
             console.warn('Invalid tab metadata found, skipping:', tabMeta);
             continue;
           }
 
-          // Validate required tab properties
           if (tabMeta.tab_number === null || tabMeta.tab_number === undefined) {
             console.warn('Tab metadata missing tab_number, setting to 0:', tabMeta);
             tabMeta.tab_number = 0;
           }
 
-        const uploadedFile = uploadedFiles.find(
-          f => f.orderItemId === order.id && f.tabId === tabMeta.tab_id
-        );
+          const uploadedFile = uploadedFiles.find(
+            f => f.orderItemId === order.id && f.tabId === tabMeta.tab_id
+          );
 
-        let pdfFile: File | null = null;
-        let pdfDataUrl: string | null = null;
-        let fileType: 'pdf' | 'jpg' | null = null;
+          let pdfFile: File | null = null;
+          let pdfDataUrl: string | null = null;
+          let fileType: 'pdf' | 'jpg' | null = null;
 
-        if (uploadedFile) {
-          const blob = await fetchFileAsBlob(uploadedFile.storageUrl);
-          if (blob) {
-            pdfFile = new File([blob], uploadedFile.originalFilename, { type: blob.type });
-            pdfDataUrl = await blobToDataUrl(blob);
-            fileType = uploadedFile.fileType === 'pdf' ? 'pdf' : 'jpg';
+          if (uploadedFile) {
+            const blob = await fetchFileAsBlob(uploadedFile.storageUrl);
+            if (blob) {
+              pdfFile = new File([blob], uploadedFile.originalFilename, { type: blob.type });
+              pdfDataUrl = await blobToDataUrl(blob);
+              fileType = uploadedFile.fileType === 'pdf' ? 'pdf' : 'jpg';
+            }
           }
-        }
 
-        // If no cloud file, try loading from the saved output folder on disk
-        if (!pdfFile && checkFolderHandle) {
-          const savedRecord = savedFilesMap.get(`${order.id}:${tabMeta.tab_id}`);
-          if (savedRecord) {
-            const diskResult = await fileSystemAPI.readFileFromPath(checkFolderHandle, savedRecord.file_path);
+          // If no cloud file, search disk by Veeqo ID
+          if (!pdfFile && designFolderHandle) {
+            const diskResult = await findFileByVeeqoId(
+              designFolderHandle,
+              order.veeqo_id,
+              tabMeta.tab_number,
+              tabMeta.label || '',
+              tabMeta.is_card || false,
+              nonInsideTabCount
+            );
             if (diskResult) {
               pdfFile = diskResult.file;
               pdfDataUrl = diskResult.dataUrl;
-              const ext = savedRecord.file_path.split('.').pop()?.toLowerCase();
-              fileType = ext === 'jpg' || ext === 'jpeg' ? 'jpg' : 'pdf';
+              fileType = diskResult.fileType;
             }
           }
-        }
 
-        const position = positions.find(
-          p => p.orderItemId === order.id && p.tabId === tabMeta.tab_id
-        );
+          const position = positions.find(
+            p => p.orderItemId === order.id && p.tabId === tabMeta.tab_id
+          );
 
-        let finalPosition = position ? {
-          x: position.xPosition,
-          y: position.yPosition,
-          fontSize: position.fontSize,
-          rotation: position.rotation
-        } : null;
+          let finalPosition = position ? {
+            x: position.xPosition,
+            y: position.yPosition,
+            fontSize: position.fontSize,
+            rotation: position.rotation
+          } : null;
 
-        let hasPosition = !!position;
+          let hasPosition = !!position;
 
-        if (!position) {
-          const productType = productTypePositionService.getProductType(tabMeta.sku || '', order.product_title || '');
-          if (productType) {
-            const typePosition = await productTypePositionService.getPositionByType(productType);
-            if (typePosition) {
-              finalPosition = {
-                x: typePosition.x_position,
-                y: typePosition.y_position,
-                fontSize: typePosition.font_size,
-                rotation: typePosition.rotation
-              };
-              hasPosition = true;
+          if (!position) {
+            const productType = productTypePositionService.getProductType(tabMeta.sku || '', order.product_title || '');
+            if (productType) {
+              const typePosition = await productTypePositionService.getPositionByType(productType);
+              if (typePosition) {
+                finalPosition = {
+                  x: typePosition.x_position,
+                  y: typePosition.y_position,
+                  fontSize: typePosition.font_size,
+                  rotation: typePosition.rotation
+                };
+                hasPosition = true;
+              }
             }
           }
-        }
 
-          // Derive pairIndex for card tabs that pre-date the pair_index column
           let resolvedPairIndex: number | null = tabMeta.pair_index ?? null;
           if (resolvedPairIndex === null && tabMeta.is_card) {
-            // Count how many card tabs with same lineItemId/lineIndex have been pushed so far
             const sameGroupCardsSoFar = tabs.filter(
               t => t.isCard && t.lineItemId === tabMeta.line_item_id && t.lineIndex === tabMeta.line_index
             ).length;
@@ -546,7 +542,7 @@ export async function loadSessionData(
             fileType,
             fileWidth: null,
             fileHeight: null,
-            isAutoLoaded: !!uploadedFile,
+            isAutoLoaded: !!uploadedFile || !!pdfFile,
             orderNumberPlaced: hasPosition,
             position: finalPosition
           });
@@ -555,7 +551,8 @@ export async function loadSessionData(
         // Fallback: reconstruct tabs from line items
         tabs = await reconstructTabsFromLineItems(order.id, lineItems, routingRules);
 
-        // Apply positions and uploaded files to reconstructed tabs
+        const lineNonInsideCount = tabs.filter(t => !(t.isCard && t.label === 'Inside')).length;
+
         for (const tab of tabs) {
           const uploadedFile = uploadedFiles.find(
             f => f.orderItemId === order.id && f.tabId === tab.id
@@ -571,18 +568,21 @@ export async function loadSessionData(
             }
           }
 
-          // If no cloud file, try loading from the saved output folder on disk
-          if (!tab.pdfFile && checkFolderHandle) {
-            const savedRecord = savedFilesMap.get(`${order.id}:${tab.id}`);
-            if (savedRecord) {
-              const diskResult = await fileSystemAPI.readFileFromPath(checkFolderHandle, savedRecord.file_path);
-              if (diskResult) {
-                tab.pdfFile = diskResult.file;
-                tab.pdfDataUrl = diskResult.dataUrl;
-                const ext = savedRecord.file_path.split('.').pop()?.toLowerCase();
-                tab.fileType = ext === 'jpg' || ext === 'jpeg' ? 'jpg' : 'pdf';
-                tab.isAutoLoaded = true;
-              }
+          // If no cloud file, search disk by Veeqo ID
+          if (!tab.pdfFile && designFolderHandle) {
+            const diskResult = await findFileByVeeqoId(
+              designFolderHandle,
+              order.veeqo_id,
+              tab.tabNumber,
+              tab.label,
+              tab.isCard,
+              lineNonInsideCount
+            );
+            if (diskResult) {
+              tab.pdfFile = diskResult.file;
+              tab.pdfDataUrl = diskResult.dataUrl;
+              tab.fileType = diskResult.fileType;
+              tab.isAutoLoaded = true;
             }
           }
 
@@ -599,7 +599,6 @@ export async function loadSessionData(
             };
             tab.orderNumberPlaced = true;
           } else {
-            // Try to get product type position
             const productType = productTypePositionService.getProductType(tab.sku, order.product_title || '');
             if (productType) {
               const typePosition = await productTypePositionService.getPositionByType(productType);
@@ -617,7 +616,6 @@ export async function loadSessionData(
         }
       }
 
-      // Only add order if it has at least one valid tab
       if (tabs.length > 0) {
         ordersWithTabs.push({
           ...order,

@@ -144,6 +144,64 @@ async function readFileFromPath(
   }
 }
 
+export async function listSubfolderHandles(
+  dirHandle: FileSystemDirectoryHandle
+): Promise<{ name: string; handle: FileSystemDirectoryHandle }[]> {
+  const subfolders: { name: string; handle: FileSystemDirectoryHandle }[] = [];
+  try {
+    for await (const entry of (dirHandle as any).values()) {
+      if (entry.kind === 'directory') {
+        subfolders.push({ name: entry.name, handle: entry as FileSystemDirectoryHandle });
+      }
+    }
+  } catch {
+    // ignore errors from inaccessible entries
+  }
+  return subfolders;
+}
+
+export async function findFileByVeeqoId(
+  rootHandle: FileSystemDirectoryHandle,
+  veeqoId: string,
+  tabNumber: number,
+  tabLabel: string,
+  isCard: boolean,
+  totalNonInsideTabs: number
+): Promise<{ file: File; dataUrl: string; fileType: 'pdf' | 'jpg' } | null> {
+  const subfolders = await listSubfolderHandles(rootHandle);
+
+  // Build candidate filenames in priority order
+  const candidates: string[] = [];
+  const extensions = ['pdf', 'jpg', 'jpeg'];
+
+  for (const ext of extensions) {
+    if (isCard && (tabLabel === 'Front' || tabLabel === 'Inside')) {
+      candidates.push(`${veeqoId}-${tabLabel}.${ext}`);
+    } else if (totalNonInsideTabs === 1) {
+      candidates.push(`${veeqoId}.${ext}`);
+    } else {
+      candidates.push(`${veeqoId}-${tabNumber}.${ext}`);
+    }
+  }
+
+  for (const subfolder of subfolders) {
+    for (const filename of candidates) {
+      try {
+        const fileHandle = await subfolder.handle.getFileHandle(filename);
+        const file = await fileHandle.getFile();
+        const dataUrl = URL.createObjectURL(file);
+        const ext = filename.split('.').pop()?.toLowerCase();
+        const fileType: 'pdf' | 'jpg' = ext === 'pdf' ? 'pdf' : 'jpg';
+        return { file, dataUrl, fileType };
+      } catch {
+        // file not found in this subfolder — try next
+      }
+    }
+  }
+
+  return null;
+}
+
 function isFileSystemAccessSupported(): boolean {
   return 'showDirectoryPicker' in window;
 }
@@ -333,54 +391,4 @@ export async function clearReferenceImagesFolderHandle(): Promise<void> {
   }
 }
 
-export async function saveCheckFolderHandle(handle: FileSystemDirectoryHandle): Promise<void> {
-  try {
-    const db = await openDB();
-    const transaction = db.transaction(STORE_NAME, 'readwrite');
-    const store = transaction.objectStore(STORE_NAME);
-    store.put(handle, 'checkFolderHandle');
 
-    await new Promise<void>((resolve, reject) => {
-      transaction.oncomplete = () => resolve();
-      transaction.onerror = () => reject(transaction.error);
-    });
-  } catch (error) {
-    console.error('Error saving check folder handle:', error);
-  }
-}
-
-export async function loadCheckFolderHandle(): Promise<FileSystemDirectoryHandle | null> {
-  try {
-    const db = await openDB();
-    const transaction = db.transaction(STORE_NAME, 'readonly');
-    const store = transaction.objectStore(STORE_NAME);
-    const request = store.get('checkFolderHandle');
-
-    return new Promise((resolve, reject) => {
-      request.onsuccess = () => {
-        const handle = request.result as FileSystemDirectoryHandle | undefined;
-        resolve(handle || null);
-      };
-      request.onerror = () => reject(request.error);
-    });
-  } catch (error) {
-    console.error('Error loading check folder handle:', error);
-    return null;
-  }
-}
-
-export async function clearCheckFolderHandle(): Promise<void> {
-  try {
-    const db = await openDB();
-    const transaction = db.transaction(STORE_NAME, 'readwrite');
-    const store = transaction.objectStore(STORE_NAME);
-    store.delete('checkFolderHandle');
-
-    await new Promise<void>((resolve, reject) => {
-      transaction.oncomplete = () => resolve();
-      transaction.onerror = () => reject(transaction.error);
-    });
-  } catch (error) {
-    console.error('Error clearing check folder handle:', error);
-  }
-}
