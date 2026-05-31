@@ -88,6 +88,15 @@ async function saveFile(
   }
 }
 
+function fileToDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
 async function readFile(
   dirHandle: FileSystemDirectoryHandle,
   filename: string
@@ -101,7 +110,7 @@ async function readFile(
 
     const fileHandle = await dirHandle.getFileHandle(filename);
     const file = await fileHandle.getFile();
-    const dataUrl = URL.createObjectURL(file);
+    const dataUrl = await fileToDataUrl(file);
 
     return { file, dataUrl };
   } catch (error) {
@@ -132,7 +141,7 @@ async function readFileFromPath(
 
     const fileHandle = await currentDir.getFileHandle(filename);
     const file = await fileHandle.getFile();
-    const dataUrl = URL.createObjectURL(file);
+    const dataUrl = await fileToDataUrl(file);
 
     return { file, dataUrl };
   } catch (error) {
@@ -189,7 +198,7 @@ export async function findFileByVeeqoId(
       try {
         const fileHandle = await subfolder.handle.getFileHandle(filename);
         const file = await fileHandle.getFile();
-        const dataUrl = URL.createObjectURL(file);
+        const dataUrl = await fileToDataUrl(file);
         const ext = filename.split('.').pop()?.toLowerCase();
         const fileType: 'pdf' | 'jpg' = ext === 'pdf' ? 'pdf' : 'jpg';
         return { file, dataUrl, fileType };
