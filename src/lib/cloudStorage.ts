@@ -197,16 +197,20 @@ export async function deleteSessionFiles(sessionId: string): Promise<boolean> {
   return true;
 }
 
-export async function fetchFileAsBlob(storageUrl: string): Promise<Blob | null> {
+export async function fetchFileAsBlob(storagePath: string): Promise<Blob | null> {
   try {
-    const response = await fetch(storageUrl);
-    if (!response.ok) {
-      console.error('Failed to fetch file:', response.statusText);
+    const { data, error } = await supabase.storage
+      .from('design-files')
+      .download(storagePath);
+
+    if (error || !data) {
+      console.error('Failed to download file:', error);
       return null;
     }
-    return await response.blob();
+
+    return data;
   } catch (error) {
-    console.error('Error fetching file:', error);
+    console.error('Error downloading file:', error);
     return null;
   }
 }

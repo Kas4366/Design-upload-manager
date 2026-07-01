@@ -464,7 +464,7 @@ export async function loadSessionData(
           let fileType: 'pdf' | 'jpg' | null = null;
 
           if (uploadedFile) {
-            const blob = await fetchFileAsBlob(uploadedFile.storageUrl);
+            const blob = await fetchFileAsBlob(uploadedFile.storagePath);
             if (blob) {
               pdfFile = new File([blob], uploadedFile.originalFilename, { type: blob.type });
               pdfDataUrl = await blobToDataUrl(blob);
@@ -559,7 +559,7 @@ export async function loadSessionData(
           );
 
           if (uploadedFile) {
-            const blob = await fetchFileAsBlob(uploadedFile.storageUrl);
+            const blob = await fetchFileAsBlob(uploadedFile.storagePath);
             if (blob) {
               tab.pdfFile = new File([blob], uploadedFile.originalFilename, { type: blob.type });
               tab.pdfDataUrl = await blobToDataUrl(blob);

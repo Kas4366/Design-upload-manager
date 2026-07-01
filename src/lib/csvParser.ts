@@ -154,12 +154,14 @@ export function convertCSVRowsToOrderItems(
     // Use first row for order-level data (veeqo_id, customer_note are shared across lines)
     const firstRow = rows[0];
 
-    // Calculate total tabs across all lines
+    // Calculate total tabs across all lines.
+    // Use same-SKU row count as divisor: if Veeqo split the same SKU across N rows
+    // (duplicate basket additions), divide qty by N. Unique SKUs get divisor = 1.
     let totalTabs = 0;
     rows.forEach(row => {
       const quantity = parseInt(row.quantity) || 1;
-      const numberOfLines = parseInt(row.number_of_lines) || 1;
-      const tabsForLine = calculateTabsForOrder(row.sku, row.title, quantity, numberOfLines);
+      const sameSKUCount = rows.filter(r => r.sku === row.sku).length;
+      const tabsForLine = calculateTabsForOrder(row.sku, row.title, quantity, sameSKUCount);
       totalTabs += tabsForLine;
     });
 
@@ -204,7 +206,7 @@ export function createLineItemsForOrder(
     sku: row.sku,
     product_title: row.title,
     quantity: parseInt(row.quantity) || 1,
-    number_of_lines: parseInt(row.number_of_lines) || 1,
+    number_of_lines: csvRows.filter(r => r.sku === row.sku).length,
     line_index: lineIndex,
     created_at: new Date().toISOString()
   }));

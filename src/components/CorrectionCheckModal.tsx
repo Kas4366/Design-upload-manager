@@ -33,8 +33,12 @@ function PDFCanvasViewer({ pdfFile, zoom }: PDFCanvasViewerProps) {
         const arrayBuffer = await pdfFile.arrayBuffer();
         if (cancelled) return;
 
+        const timeout = new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('PDF render timeout')), 10000)
+        );
+
         const loadingTask = pdfjsLib.getDocument({ data: new Uint8Array(arrayBuffer) });
-        const pdf = await loadingTask.promise;
+        const pdf = await Promise.race([loadingTask.promise, timeout]);
         if (cancelled) return;
 
         const page = await pdf.getPage(1);
