@@ -175,7 +175,8 @@ export async function findFileByVeeqoId(
   tabNumber: number,
   tabLabel: string,
   isCard: boolean,
-  totalNonInsideTabs: number
+  totalNonInsideTabs: number,
+  isAmazonOrder: boolean = false
 ): Promise<{ file: File; dataUrl: string; fileType: 'pdf' | 'jpg' } | null> {
   const subfolders = await listSubfolderHandles(rootHandle);
 
@@ -183,13 +184,18 @@ export async function findFileByVeeqoId(
   const candidates: string[] = [];
   const extensions = ['pdf', 'jpg', 'jpeg'];
 
+  // For Amazon orders, also try Amz- prefixed filenames
+  const idVariants = isAmazonOrder ? [`Amz-${veeqoId}`, veeqoId] : [veeqoId];
+
   for (const ext of extensions) {
-    if (isCard && (tabLabel === 'Front' || tabLabel === 'Inside')) {
-      candidates.push(`${veeqoId}-${tabLabel}.${ext}`);
-    } else if (totalNonInsideTabs === 1) {
-      candidates.push(`${veeqoId}.${ext}`);
-    } else {
-      candidates.push(`${veeqoId}-${tabNumber}.${ext}`);
+    for (const idVariant of idVariants) {
+      if (isCard && (tabLabel === 'Front' || tabLabel === 'Inside')) {
+        candidates.push(`${idVariant}-${tabLabel}.${ext}`);
+      } else if (totalNonInsideTabs === 1) {
+        candidates.push(`${idVariant}.${ext}`);
+      } else {
+        candidates.push(`${idVariant}-${tabNumber}.${ext}`);
+      }
     }
   }
 

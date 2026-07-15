@@ -140,6 +140,7 @@ export interface Database {
           marked_for_review: boolean;
           review_notes: string;
           is_on_hold: boolean;
+          channel: string;
         };
         Insert: {
           id?: string;
@@ -163,6 +164,7 @@ export interface Database {
           marked_for_review?: boolean;
           review_notes?: string;
           is_on_hold?: boolean;
+          channel?: string;
         };
         Update: {
           id?: string;
@@ -186,6 +188,7 @@ export interface Database {
           marked_for_review?: boolean;
           review_notes?: string;
           is_on_hold?: boolean;
+          channel?: string;
         };
       };
       tab_metadata: {
@@ -243,6 +246,7 @@ export interface Database {
           number_of_lines_column: string | null;
           customer_note_column: string | null;
           additional_options_column: string | null;
+          channel_column: string | null;
           updated_at: string;
           created_at: string;
         };
@@ -256,6 +260,7 @@ export interface Database {
           number_of_lines_column?: string | null;
           customer_note_column?: string | null;
           additional_options_column?: string | null;
+          channel_column?: string | null;
           updated_at?: string;
           created_at?: string;
         };
@@ -269,6 +274,7 @@ export interface Database {
           number_of_lines_column?: string | null;
           customer_note_column?: string | null;
           additional_options_column?: string | null;
+          channel_column?: string | null;
           updated_at?: string;
           created_at?: string;
         };
@@ -445,6 +451,7 @@ export interface OrderItem {
   marked_for_review: boolean;
   review_notes: string;
   is_on_hold: boolean;
+  channel: string;
 }
 
 export interface CSVRow {
@@ -456,6 +463,7 @@ export interface CSVRow {
   number_of_lines: string;
   customer_note: string;
   additional_options: string;
+  channel: string;
 }
 
 export interface UploadTab {
@@ -499,6 +507,7 @@ export interface CSVColumnMapping {
   number_of_lines_column: string | null;
   customer_note_column: string | null;
   additional_options_column: string | null;
+  channel_column: string | null;
   updated_at: string;
   created_at: string;
 }

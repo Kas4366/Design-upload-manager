@@ -96,18 +96,33 @@ export class FileSaverService {
       });
   }
 
-  generateFilename(veeqoId: string, tabNumber: number, sku: string, tabLabel: string, isCard: boolean, totalNonInsideTabs: number, outputFormat: 'pdf' | 'jpg' = 'pdf'): string {
+  generateFilename(veeqoId: string, tabNumber: number, sku: string, tabLabel: string, isCard: boolean, totalNonInsideTabs: number, outputFormat: 'pdf' | 'jpg' = 'pdf', prependAmz: boolean = false): string {
     const extension = outputFormat === 'jpg' ? 'jpg' : 'pdf';
+    const idPrefix = prependAmz ? 'Amz-' : '';
 
     if (isCard && (tabLabel === 'Front' || tabLabel === 'Inside')) {
-      return `${veeqoId}-${tabLabel}.${extension}`;
+      return `${idPrefix}${veeqoId}-${tabLabel}.${extension}`;
     }
 
     if (totalNonInsideTabs === 1) {
-      return `${veeqoId}.${extension}`;
+      return `${idPrefix}${veeqoId}.${extension}`;
     }
 
-    return `${veeqoId}-${tabNumber}.${extension}`;
+    return `${idPrefix}${veeqoId}-${tabNumber}.${extension}`;
+  }
+
+  async getAppendAmzPrefixSetting(): Promise<boolean> {
+    const { data } = await supabase
+      .from('app_settings')
+      .select('value')
+      .eq('key', 'append_amz_prefix')
+      .maybeSingle();
+
+    return data?.value === 'true';
+  }
+
+  isAmazonChannel(channel: string): boolean {
+    return channel.toLowerCase().includes('amazon');
   }
 
   async saveOrderFiles(order: OrderWithTabs, sessionId?: string, csvFilename?: string): Promise<{
@@ -142,6 +157,9 @@ export class FileSaverService {
       const skippedPaths: string[] = [];
 
       const totalNonInsideTabs = order.tabs.filter(t => !(t.isCard && t.label === 'Inside')).length;
+
+      const appendAmzPrefix = await this.getAppendAmzPrefixSetting();
+      const prependAmz = appendAmzPrefix && this.isAmazonChannel(order.channel || '');
 
       for (const tab of order.tabs) {
         if (!tab.pdfFile) {
@@ -224,7 +242,7 @@ export class FileSaverService {
           }
         }
 
-        const filename = this.generateFilename(order.veeqo_id, tab.tabNumber, tab.sku, tab.label, tab.isCard, totalNonInsideTabs, outputFormat);
+        const filename = this.generateFilename(order.veeqo_id, tab.tabNumber, tab.sku, tab.label, tab.isCard, totalNonInsideTabs, outputFormat, prependAmz);
 
         const success = await fileSystemAPI.saveFile(
           folderHandle,
@@ -277,6 +295,9 @@ export class FileSaverService {
       const filesToZip: FileToZip[] = [];
       const totalNonInsideTabs = order.tabs.filter(t => !(t.isCard && t.label === 'Inside')).length;
 
+      const appendAmzPrefix = await this.getAppendAmzPrefixSetting();
+      const prependAmz = appendAmzPrefix && this.isAmazonChannel(order.channel || '');
+
       for (const tab of order.tabs) {
         if (!tab.pdfFile || !tab.selectedFolder) {
           continue;
@@ -325,7 +346,7 @@ export class FileSaverService {
           }
         }
 
-        const filename = this.generateFilename(order.veeqo_id, tab.tabNumber, tab.sku, tab.label, tab.isCard, totalNonInsideTabs, outputFormat);
+        const filename = this.generateFilename(order.veeqo_id, tab.tabNumber, tab.sku, tab.label, tab.isCard, totalNonInsideTabs, outputFormat, prependAmz);
 
         filesToZip.push({
           folderPath: tab.selectedFolder,

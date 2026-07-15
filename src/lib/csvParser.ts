@@ -20,7 +20,12 @@ export function parseCSV(file: File, columnMapping?: CSVColumnMapping | null): P
           number_of_lines: columnMapping.number_of_lines_column || defaultColumns.number_of_lines_column,
           customer_note: columnMapping.customer_note_column || defaultColumns.customer_note_column,
           additional_options: columnMapping.additional_options_column || defaultColumns.additional_options_column,
-        } : defaultColumns;
+          channel: columnMapping.channel_column || '',
+        } : { ...defaultColumns, channel: '' };
+
+        // Determine channel header: use mapped column if provided, otherwise fall back to column AB (index 27)
+        const fields = results.meta.fields || [];
+        const channelHeader = mapping.channel || fields[27] || '';
 
         const csvRows: CSVRow[] = rows.map(row => ({
           id: row[mapping.id] || '',
@@ -30,7 +35,8 @@ export function parseCSV(file: File, columnMapping?: CSVColumnMapping | null): P
           quantity: row[mapping.quantity] || '1',
           number_of_lines: row[mapping.number_of_lines] || '1',
           customer_note: row[mapping.customer_note] || '',
-          additional_options: row[mapping.additional_options] || ''
+          additional_options: row[mapping.additional_options] || '',
+          channel: channelHeader ? (row[channelHeader] || '') : ''
         }));
         resolve(csvRows);
       },
@@ -188,6 +194,7 @@ export function convertCSVRowsToOrderItems(
       marked_for_review: false,
       review_notes: '',
       is_on_hold: false,
+      channel: firstRow.channel, // Sales channel from CSV column AB
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString()
     });

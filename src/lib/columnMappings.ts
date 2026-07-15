@@ -30,6 +30,7 @@ export async function saveColumnMappings(mappings: {
   number_of_lines_column: string;
   customer_note_column: string;
   additional_options_column: string;
+  channel_column: string;
 }): Promise<{ success: boolean; error?: string }> {
   try {
     console.log('Starting saveColumnMappings...', mappings);
@@ -104,5 +105,6 @@ export function getDefaultColumnNames() {
     number_of_lines_column: 'number_of_lines',
     customer_note_column: 'customer_note',
     additional_options_column: 'additional_options',
+    channel_column: '',
   };
 }

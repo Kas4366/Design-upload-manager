@@ -109,6 +109,7 @@ export async function createSession(
     title: row.title,
     quantity: row.quantity,
     number_of_lines: row.number_of_lines,
+    channel: row.channel || '',
     line1: row.line1 || '',
     line2: row.line2 || '',
     line3: row.line3 || '',
@@ -480,7 +481,8 @@ export async function loadSessionData(
               tabMeta.tab_number,
               tabMeta.label || '',
               tabMeta.is_card || false,
-              nonInsideTabCount
+              nonInsideTabCount,
+              (order.channel || '').toLowerCase().includes('amazon')
             );
             if (diskResult) {
               pdfFile = diskResult.file;
@@ -576,7 +578,8 @@ export async function loadSessionData(
               tab.tabNumber,
               tab.label,
               tab.isCard,
-              lineNonInsideCount
+              lineNonInsideCount,
+              (order.channel || '').toLowerCase().includes('amazon')
             );
             if (diskResult) {
               tab.pdfFile = diskResult.file;

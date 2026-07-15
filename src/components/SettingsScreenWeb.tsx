@@ -18,6 +18,7 @@ interface SettingsScreenProps {
 
 export function SettingsScreenWeb({ onClose }: SettingsScreenProps) {
   const [premadeFolderPath, setPremadeFolderPath] = useState('');
+  const [appendAmzPrefix, setAppendAmzPrefix] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
@@ -92,13 +93,15 @@ export function SettingsScreenWeb({ onClose }: SettingsScreenProps) {
       const { data, error } = await supabase
         .from('app_settings')
         .select('*')
-        .in('key', ['premade_folder_path']);
+        .in('key', ['premade_folder_path', 'append_amz_prefix']);
 
       if (error) throw error;
 
       if (data) {
         const premadeEntry = data.find(d => d.key === 'premade_folder_path');
         if (premadeEntry) setPremadeFolderPath(premadeEntry.value || '');
+        const amzEntry = data.find(d => d.key === 'append_amz_prefix');
+        if (amzEntry) setAppendAmzPrefix(amzEntry.value === 'true');
       }
     } catch (err) {
       setError(`Failed to load settings: ${err instanceof Error ? err.message : 'Unknown error'}`);
@@ -184,6 +187,14 @@ export function SettingsScreenWeb({ onClose }: SettingsScreenProps) {
         .from('app_settings')
         .update({ value: premadeFolderPath, updated_at: new Date().toISOString() })
         .eq('key', 'premade_folder_path');
+
+      await supabase
+        .from('app_settings')
+        .upsert({
+          key: 'append_amz_prefix',
+          value: appendAmzPrefix ? 'true' : 'false',
+          updated_at: new Date().toISOString()
+        }, { onConflict: 'key' });
 
       setSaveSuccess(true);
       setTimeout(() => {
@@ -467,6 +478,29 @@ export function SettingsScreenWeb({ onClose }: SettingsScreenProps) {
                 <p className="text-sm text-gray-500 mt-2">
                   Select the local folder containing original SKU reference images named by SKU (e.g., SMCH-123.jpg). The app will display these images as reference when uploading designs.
                 </p>
+              </div>
+
+              <div className="border-t border-gray-200 pt-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-900">
+                      Append Amz- to Order Number
+                    </label>
+                    <p className="text-sm text-gray-500 mt-1 max-w-md">
+                      When enabled, Amazon orders will have &quot;Amz-&quot; prepended to the Veeqo ID in saved filenames (e.g., Amz-1234.pdf). Other orders are unaffected.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setAppendAmzPrefix(!appendAmzPrefix)}
+                    className={`relative inline-flex h-7 w-12 flex-shrink-0 items-center rounded-full transition-colors duration-200 ${appendAmzPrefix ? 'bg-blue-600' : 'bg-gray-300'}`}
+                    aria-label="Toggle Amz- prefix for Amazon orders"
+                  >
+                    <span
+                      className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform duration-200 ${appendAmzPrefix ? 'translate-x-6' : 'translate-x-1'}`}
+                    />
+                  </button>
+                </div>
               </div>
             </div>
           )}
