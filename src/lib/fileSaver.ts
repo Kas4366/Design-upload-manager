@@ -121,11 +121,71 @@ export class FileSaverService {
     return data?.value === 'true';
   }
 
+  async getBLLabelNumberingSetting(): Promise<boolean> {
+    const { data } = await supabase
+      .from('app_settings')
+      .select('value')
+      .eq('key', 'bl_label_numbering')
+      .maybeSingle();
+
+    return data?.value === 'true';
+  }
+
   isAmazonChannel(channel: string): boolean {
     return channel.toLowerCase().includes('amazon');
   }
 
-  async saveOrderFiles(order: OrderWithTabs, sessionId?: string, csvFilename?: string): Promise<{
+  isBLTab(tab: { selectedFolder: string | null }): boolean {
+    return (tab.selectedFolder || '').toUpperCase() === 'BL';
+  }
+
+  computeBLLabelNumbers(orders: OrderWithTabs[], appendAmzPrefix: boolean): Map<string, string> {
+    const labelMap = new Map<string, string>();
+
+    const blOrders = orders.filter(order =>
+      order.tabs.some(tab => this.isBLTab(tab))
+    );
+
+    const sortedBL = [...blOrders].sort((a, b) =>
+      a.veeqo_id.localeCompare(b.veeqo_id, undefined, { numeric: true })
+    );
+
+    if (appendAmzPrefix) {
+      const amzOrders = sortedBL.filter(o => this.isAmazonChannel(o.channel || ''));
+      const normalOrders = sortedBL.filter(o => !this.isAmazonChannel(o.channel || ''));
+
+      amzOrders.forEach((order, index) => {
+        const seq = index + 1;
+        const blTabs = order.tabs.filter(tab => this.isBLTab(tab));
+        blTabs.forEach((tab, tabIdx) => {
+          const label = blTabs.length > 1 ? `A${seq}-${tabIdx + 1}` : `A${seq}`;
+          labelMap.set(`${order.id}:${tab.id}`, label);
+        });
+      });
+
+      normalOrders.forEach((order, index) => {
+        const seq = index + 1;
+        const blTabs = order.tabs.filter(tab => this.isBLTab(tab));
+        blTabs.forEach((tab, tabIdx) => {
+          const label = blTabs.length > 1 ? `${seq}-${tabIdx + 1}` : `${seq}`;
+          labelMap.set(`${order.id}:${tab.id}`, label);
+        });
+      });
+    } else {
+      sortedBL.forEach((order, index) => {
+        const seq = index + 1;
+        const blTabs = order.tabs.filter(tab => this.isBLTab(tab));
+        blTabs.forEach((tab, tabIdx) => {
+          const label = blTabs.length > 1 ? `${seq}-${tabIdx + 1}` : `${seq}`;
+          labelMap.set(`${order.id}:${tab.id}`, label);
+        });
+      });
+    }
+
+    return labelMap;
+  }
+
+  async saveOrderFiles(order: OrderWithTabs, sessionId?: string, csvFilename?: string, allOrders?: OrderWithTabs[]): Promise<{
     success: boolean;
     error?: string;
     savedPaths?: string[];
@@ -135,7 +195,7 @@ export class FileSaverService {
       const folderHandle = await this.getSavedFolderHandle();
 
       if (!folderHandle && !fileSystemAPI.isSupported) {
-        return await this.saveAsZipExport(order);
+        return await this.saveAsZipExport(order, allOrders);
       }
 
       if (!folderHandle) {
@@ -160,6 +220,11 @@ export class FileSaverService {
 
       const appendAmzPrefix = await this.getAppendAmzPrefixSetting();
       const prependAmz = appendAmzPrefix && this.isAmazonChannel(order.channel || '');
+
+      const blLabelNumbering = await this.getBLLabelNumberingSetting();
+      const blLabelMap = blLabelNumbering && allOrders
+        ? this.computeBLLabelNumbers(allOrders, appendAmzPrefix)
+        : new Map<string, string>();
 
       for (const tab of order.tabs) {
         if (!tab.pdfFile) {
@@ -219,13 +284,16 @@ export class FileSaverService {
             fileBytes = await convertJPGToPDF(fileBytes);
           }
         } else {
+          const labelNumber = blLabelMap.get(`${order.id}:${tab.id}`);
+
           if (tab.fileType === 'jpg') {
             fileBytes = await embedOrderNumberInJPG(
               tab.pdfFile,
               order.order_number,
               tab.tabNumber,
               tab.position!,
-              totalNonInsideTabs
+              totalNonInsideTabs,
+              labelNumber
             );
           } else {
             fileBytes = await embedOrderNumberInPDF(
@@ -233,7 +301,8 @@ export class FileSaverService {
               order.order_number,
               tab.tabNumber,
               tab.position!,
-              totalNonInsideTabs
+              totalNonInsideTabs,
+              labelNumber
             );
           }
 
@@ -286,7 +355,7 @@ export class FileSaverService {
     }
   }
 
-  async saveAsZipExport(order: OrderWithTabs): Promise<{
+  async saveAsZipExport(order: OrderWithTabs, allOrders?: OrderWithTabs[]): Promise<{
     success: boolean;
     error?: string;
     savedPaths?: string[];
@@ -297,6 +366,11 @@ export class FileSaverService {
 
       const appendAmzPrefix = await this.getAppendAmzPrefixSetting();
       const prependAmz = appendAmzPrefix && this.isAmazonChannel(order.channel || '');
+
+      const blLabelNumbering = await this.getBLLabelNumberingSetting();
+      const blLabelMap = blLabelNumbering && allOrders
+        ? this.computeBLLabelNumbers(allOrders, appendAmzPrefix)
+        : new Map<string, string>();
 
       for (const tab of order.tabs) {
         if (!tab.pdfFile || !tab.selectedFolder) {
@@ -323,13 +397,16 @@ export class FileSaverService {
         } else {
           if (!tab.position) continue;
 
+          const labelNumber = blLabelMap.get(`${order.id}:${tab.id}`);
+
           if (tab.fileType === 'jpg') {
             fileBytes = await embedOrderNumberInJPG(
               tab.pdfFile,
               order.order_number,
               tab.tabNumber,
               tab.position,
-              totalNonInsideTabs
+              totalNonInsideTabs,
+              labelNumber
             );
           } else {
             fileBytes = await embedOrderNumberInPDF(
@@ -337,7 +414,8 @@ export class FileSaverService {
               order.order_number,
               tab.tabNumber,
               tab.position,
-              totalNonInsideTabs
+              totalNonInsideTabs,
+              labelNumber
             );
           }
 
@@ -390,7 +468,7 @@ export class FileSaverService {
     const ordersToSave = orders.filter(o => selectedOrderIds.includes(o.id));
 
     for (const order of ordersToSave) {
-      const result = await this.saveOrderFiles(order);
+      const result = await this.saveOrderFiles(order, undefined, undefined, orders);
 
       if (result.success) {
         savedCount += result.savedPaths?.length || 0;

@@ -31,7 +31,8 @@ export async function embedOrderNumberInJPG(
   orderNumber: string,
   tabNumber: number,
   position: { x: number; y: number; fontSize: number; rotation: number },
-  totalTabs: number = 1
+  totalTabs: number = 1,
+  labelNumber?: string
 ): Promise<Uint8Array> {
   return new Promise(async (resolve, reject) => {
     try {
@@ -53,8 +54,10 @@ export async function embedOrderNumberInJPG(
       const yPosition = height - position.y;
       const textToEmbed = totalTabs > 1 ? `${orderNumber}-${tabNumber}` : orderNumber;
 
+      const textX = drawLabelAndOrderNumber(page, font, position.x, yPosition, position.fontSize, position.rotation, textToEmbed, labelNumber);
+
       page.drawText(textToEmbed, {
-        x: position.x,
+        x: textX,
         y: yPosition,
         size: position.fontSize,
         font: font,
@@ -75,7 +78,8 @@ export async function embedOrderNumberInPDF(
   orderNumber: string,
   tabNumber: number,
   position: { x: number; y: number; fontSize: number; rotation: number },
-  totalTabs: number = 1
+  totalTabs: number = 1,
+  labelNumber?: string
 ): Promise<Uint8Array> {
   const arrayBuffer = await pdfFile.arrayBuffer();
   const pdfDoc = await PDFDocument.load(arrayBuffer);
@@ -89,8 +93,10 @@ export async function embedOrderNumberInPDF(
 
   const textToEmbed = totalTabs > 1 ? `${orderNumber}-${tabNumber}` : orderNumber;
 
+  const textX = drawLabelAndOrderNumber(firstPage, font, position.x, yPosition, position.fontSize, position.rotation, textToEmbed, labelNumber);
+
   firstPage.drawText(textToEmbed, {
-    x: position.x,
+    x: textX,
     y: yPosition,
     size: position.fontSize,
     font: font,
@@ -100,6 +106,51 @@ export async function embedOrderNumberInPDF(
 
   const pdfBytes = await pdfDoc.save();
   return pdfBytes;
+}
+
+function drawLabelAndOrderNumber(
+  page: any,
+  font: any,
+  x: number,
+  y: number,
+  fontSize: number,
+  rotation: number,
+  orderText: string,
+  labelNumber?: string
+): number {
+  if (!labelNumber) {
+    return x;
+  }
+
+  const circleRadius = fontSize * 0.75;
+  const circleCenterX = x + circleRadius;
+  const circleCenterY = y + fontSize * 0.35;
+
+  page.drawCircle({
+    x: circleCenterX,
+    y: circleCenterY,
+    size: circleRadius,
+    borderColor: rgb(0, 0, 0),
+    borderWidth: 1.5,
+  rotate: degrees(rotation),
+  });
+
+  const labelFontSize = fontSize * 0.7;
+  const labelWidth = font.widthOfTextAtSize(labelNumber, labelFontSize);
+  const labelX = circleCenterX - labelWidth / 2;
+  const labelY = circleCenterY - labelFontSize * 0.35;
+
+  page.drawText(labelNumber, {
+    x: labelX,
+    y: labelY,
+    size: labelFontSize,
+    font: font,
+    color: rgb(0, 0, 0),
+    rotate: degrees(rotation),
+  });
+
+  const gap = fontSize * 0.3;
+  return circleCenterX + circleRadius + gap;
 }
 
 export async function convertPDFToImageDataURL(pdfFile: File | Blob): Promise<string> {

@@ -19,6 +19,7 @@ interface SettingsScreenProps {
 export function SettingsScreenWeb({ onClose }: SettingsScreenProps) {
   const [premadeFolderPath, setPremadeFolderPath] = useState('');
   const [appendAmzPrefix, setAppendAmzPrefix] = useState(false);
+  const [blLabelNumbering, setBLLabelNumbering] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
@@ -93,7 +94,7 @@ export function SettingsScreenWeb({ onClose }: SettingsScreenProps) {
       const { data, error } = await supabase
         .from('app_settings')
         .select('*')
-        .in('key', ['premade_folder_path', 'append_amz_prefix']);
+        .in('key', ['premade_folder_path', 'append_amz_prefix', 'bl_label_numbering']);
 
       if (error) throw error;
 
@@ -102,6 +103,8 @@ export function SettingsScreenWeb({ onClose }: SettingsScreenProps) {
         if (premadeEntry) setPremadeFolderPath(premadeEntry.value || '');
         const amzEntry = data.find(d => d.key === 'append_amz_prefix');
         if (amzEntry) setAppendAmzPrefix(amzEntry.value === 'true');
+        const blEntry = data.find(d => d.key === 'bl_label_numbering');
+        if (blEntry) setBLLabelNumbering(blEntry.value === 'true');
       }
     } catch (err) {
       setError(`Failed to load settings: ${err instanceof Error ? err.message : 'Unknown error'}`);
@@ -193,6 +196,14 @@ export function SettingsScreenWeb({ onClose }: SettingsScreenProps) {
         .upsert({
           key: 'append_amz_prefix',
           value: appendAmzPrefix ? 'true' : 'false',
+          updated_at: new Date().toISOString()
+        }, { onConflict: 'key' });
+
+      await supabase
+        .from('app_settings')
+        .upsert({
+          key: 'bl_label_numbering',
+          value: blLabelNumbering ? 'true' : 'false',
           updated_at: new Date().toISOString()
         }, { onConflict: 'key' });
 
@@ -498,6 +509,29 @@ export function SettingsScreenWeb({ onClose }: SettingsScreenProps) {
                   >
                     <span
                       className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform duration-200 ${appendAmzPrefix ? 'translate-x-6' : 'translate-x-1'}`}
+                    />
+                  </button>
+                </div>
+              </div>
+
+              <div className="border-t border-gray-200 pt-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-900">
+                      Activate BL Label Number
+                    </label>
+                    <p className="text-sm text-gray-500 mt-1 max-w-md">
+                      When enabled, BL (bottle label) designs will have a sequential number drawn inside a circle to the left of the order number. Orders are sorted by Veeqo ID to determine the sequence. If Amz prefix is also on, Amazon and non-Amazon BL orders get separate sequences (Amazon prefixed with &quot;A&quot;). Tip: set all folders before saving so the numbering is consistent.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setBLLabelNumbering(!blLabelNumbering)}
+                    className={`relative inline-flex h-7 w-12 flex-shrink-0 items-center rounded-full transition-colors duration-200 ${blLabelNumbering ? 'bg-blue-600' : 'bg-gray-300'}`}
+                    aria-label="Toggle BL label numbering"
+                  >
+                    <span
+                      className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform duration-200 ${blLabelNumbering ? 'translate-x-6' : 'translate-x-1'}`}
                     />
                   </button>
                 </div>

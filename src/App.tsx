@@ -726,7 +726,7 @@ function App() {
     setSaveProgress('Saving design files...');
 
     try {
-      const result = await fileSaverService.saveOrderFiles(selectedOrder);
+      const result = await fileSaverService.saveOrderFiles(selectedOrder, undefined, undefined, orders);
 
       if (result.success) {
         let message = 'Files saved successfully!';
@@ -793,7 +793,7 @@ function App() {
         const order = ordersToSave[i];
         setSaveProgress(`Saving order ${i + 1} of ${ordersToSave.length}...`);
 
-        const result = await fileSaverService.saveOrderFiles(order);
+        const result = await fileSaverService.saveOrderFiles(order, undefined, undefined, orders);
 
         if (result.success) {
           savedCount += result.savedPaths?.length || 0;
