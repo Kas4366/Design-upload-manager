@@ -122,35 +122,20 @@ function drawLabelAndOrderNumber(
     return x;
   }
 
-  const circleRadius = fontSize * 0.75;
-  const circleCenterX = x + circleRadius;
-  const circleCenterY = y + fontSize * 0.35;
+  const bracketedLabel = `[${labelNumber}]`;
+  const labelWidth = font.widthOfTextAtSize(bracketedLabel, fontSize);
+  const gap = fontSize * 0.3;
 
-  page.drawCircle({
-    x: circleCenterX,
-    y: circleCenterY,
-    size: circleRadius,
-    borderColor: rgb(0, 0, 0),
-    borderWidth: 1.5,
-  rotate: degrees(rotation),
-  });
-
-  const labelFontSize = fontSize * 0.7;
-  const labelWidth = font.widthOfTextAtSize(labelNumber, labelFontSize);
-  const labelX = circleCenterX - labelWidth / 2;
-  const labelY = circleCenterY - labelFontSize * 0.35;
-
-  page.drawText(labelNumber, {
-    x: labelX,
-    y: labelY,
-    size: labelFontSize,
+  page.drawText(bracketedLabel, {
+    x: x,
+    y: y,
+    size: fontSize,
     font: font,
     color: rgb(0, 0, 0),
     rotate: degrees(rotation),
   });
 
-  const gap = fontSize * 0.3;
-  return circleCenterX + circleRadius + gap;
+  return x + labelWidth + gap;
 }
 
 export async function convertPDFToImageDataURL(pdfFile: File | Blob): Promise<string> {
