@@ -475,6 +475,13 @@ export async function loadSessionData(
 
           // If no cloud file, search disk by Veeqo ID
           if (!pdfFile && designFolderHandle) {
+            let diskPairIndex: number | null = tabMeta.pair_index ?? null;
+            if (diskPairIndex === null && tabMeta.is_card) {
+              const sameGroupCardsSoFar = tabs.filter(
+                t => t.isCard && t.lineItemId === tabMeta.line_item_id && t.lineIndex === tabMeta.line_index
+              ).length;
+              diskPairIndex = Math.floor(sameGroupCardsSoFar / 2) + 1;
+            }
             const diskResult = await findFileByVeeqoId(
               designFolderHandle,
               order.veeqo_id,
@@ -482,7 +489,8 @@ export async function loadSessionData(
               tabMeta.label || '',
               tabMeta.is_card || false,
               nonInsideTabCount,
-              (order.channel || '').toLowerCase().includes('amazon')
+              (order.channel || '').toLowerCase().includes('amazon'),
+              diskPairIndex
             );
             if (diskResult) {
               pdfFile = diskResult.file;
@@ -579,7 +587,8 @@ export async function loadSessionData(
               tab.label,
               tab.isCard,
               lineNonInsideCount,
-              (order.channel || '').toLowerCase().includes('amazon')
+              (order.channel || '').toLowerCase().includes('amazon'),
+              tab.pairIndex
             );
             if (diskResult) {
               tab.pdfFile = diskResult.file;

@@ -176,7 +176,8 @@ export async function findFileByVeeqoId(
   tabLabel: string,
   isCard: boolean,
   totalNonInsideTabs: number,
-  isAmazonOrder: boolean = false
+  isAmazonOrder: boolean = false,
+  pairIndex: number | null = null
 ): Promise<{ file: File; dataUrl: string; fileType: 'pdf' | 'jpg' } | null> {
   const subfolders = await listSubfolderHandles(rootHandle);
 
@@ -190,6 +191,10 @@ export async function findFileByVeeqoId(
   for (const ext of extensions) {
     for (const idVariant of idVariants) {
       if (isCard && (tabLabel === 'Front' || tabLabel === 'Inside')) {
+        // Try pair-indexed filename first (new naming), then fall back to legacy
+        if (totalNonInsideTabs > 1 && pairIndex !== null) {
+          candidates.push(`${idVariant}-${tabLabel}-${pairIndex}.${ext}`);
+        }
         candidates.push(`${idVariant}-${tabLabel}.${ext}`);
       } else if (totalNonInsideTabs === 1) {
         candidates.push(`${idVariant}.${ext}`);

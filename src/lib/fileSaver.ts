@@ -96,11 +96,14 @@ export class FileSaverService {
       });
   }
 
-  generateFilename(veeqoId: string, tabNumber: number, sku: string, tabLabel: string, isCard: boolean, totalNonInsideTabs: number, outputFormat: 'pdf' | 'jpg' = 'pdf', prependAmz: boolean = false): string {
+  generateFilename(veeqoId: string, tabNumber: number, sku: string, tabLabel: string, isCard: boolean, totalNonInsideTabs: number, outputFormat: 'pdf' | 'jpg' = 'pdf', prependAmz: boolean = false, pairIndex: number | null = null): string {
     const extension = outputFormat === 'jpg' ? 'jpg' : 'pdf';
     const idPrefix = prependAmz ? 'Amz-' : '';
 
     if (isCard && (tabLabel === 'Front' || tabLabel === 'Inside')) {
+      if (totalNonInsideTabs > 1 && pairIndex !== null) {
+        return `${idPrefix}${veeqoId}-${tabLabel}-${pairIndex}.${extension}`;
+      }
       return `${idPrefix}${veeqoId}-${tabLabel}.${extension}`;
     }
 
@@ -285,12 +288,13 @@ export class FileSaverService {
           }
         } else {
           const labelNumber = blLabelMap.get(`${order.id}:${tab.id}`);
+          const numberingIndex = tab.isCard ? (tab.pairIndex ?? 1) : tab.tabNumber;
 
           if (tab.fileType === 'jpg') {
             fileBytes = await embedOrderNumberInJPG(
               tab.pdfFile,
               order.order_number,
-              tab.tabNumber,
+              numberingIndex,
               tab.position!,
               totalNonInsideTabs,
               labelNumber
@@ -299,7 +303,7 @@ export class FileSaverService {
             fileBytes = await embedOrderNumberInPDF(
               tab.pdfFile,
               order.order_number,
-              tab.tabNumber,
+              numberingIndex,
               tab.position!,
               totalNonInsideTabs,
               labelNumber
@@ -311,7 +315,7 @@ export class FileSaverService {
           }
         }
 
-        const filename = this.generateFilename(order.veeqo_id, tab.tabNumber, tab.sku, tab.label, tab.isCard, totalNonInsideTabs, outputFormat, prependAmz);
+        const filename = this.generateFilename(order.veeqo_id, tab.tabNumber, tab.sku, tab.label, tab.isCard, totalNonInsideTabs, outputFormat, prependAmz, tab.pairIndex);
 
         const success = await fileSystemAPI.saveFile(
           folderHandle,
@@ -398,12 +402,13 @@ export class FileSaverService {
           if (!tab.position) continue;
 
           const labelNumber = blLabelMap.get(`${order.id}:${tab.id}`);
+          const numberingIndex = tab.isCard ? (tab.pairIndex ?? 1) : tab.tabNumber;
 
           if (tab.fileType === 'jpg') {
             fileBytes = await embedOrderNumberInJPG(
               tab.pdfFile,
               order.order_number,
-              tab.tabNumber,
+              numberingIndex,
               tab.position,
               totalNonInsideTabs,
               labelNumber
@@ -412,7 +417,7 @@ export class FileSaverService {
             fileBytes = await embedOrderNumberInPDF(
               tab.pdfFile,
               order.order_number,
-              tab.tabNumber,
+              numberingIndex,
               tab.position,
               totalNonInsideTabs,
               labelNumber
@@ -424,7 +429,7 @@ export class FileSaverService {
           }
         }
 
-        const filename = this.generateFilename(order.veeqo_id, tab.tabNumber, tab.sku, tab.label, tab.isCard, totalNonInsideTabs, outputFormat, prependAmz);
+        const filename = this.generateFilename(order.veeqo_id, tab.tabNumber, tab.sku, tab.label, tab.isCard, totalNonInsideTabs, outputFormat, prependAmz, tab.pairIndex);
 
         filesToZip.push({
           folderPath: tab.selectedFolder,
