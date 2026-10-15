@@ -197,16 +197,18 @@ export async function saveOrderNumberPosition(
   fontSize: number,
   rotation: number
 ): Promise<boolean> {
+  const round2 = (n: number) => Math.round(n * 100) / 100;
+
   const { error } = await supabase
     .from('session_positions')
     .upsert({
       session_id: sessionId,
       order_item_id: orderItemId,
       tab_id: tabId,
-      x_position: xPosition,
-      y_position: yPosition,
-      font_size: fontSize,
-      rotation: rotation,
+      x_position: round2(xPosition),
+      y_position: round2(yPosition),
+      font_size: round2(fontSize),
+      rotation: round2(rotation),
       saved_at: new Date().toISOString()
     }, {
       onConflict: 'session_id,order_item_id,tab_id'

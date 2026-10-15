@@ -32,14 +32,16 @@ export class ProductTypePositionService {
     position: { x: number; y: number; fontSize: number; rotation: number }
   ): Promise<{ success: boolean; error?: string }> {
     try {
+      const round2 = (n: number) => Math.round(n * 100) / 100;
+
       const { error } = await supabase
         .from('product_type_positions')
         .upsert({
           product_type: productType,
-          x_position: position.x,
-          y_position: position.y,
-          font_size: position.fontSize,
-          rotation: position.rotation,
+          x_position: round2(position.x),
+          y_position: round2(position.y),
+          font_size: round2(position.fontSize),
+          rotation: round2(position.rotation),
           updated_at: new Date().toISOString()
         }, {
           onConflict: 'product_type'
